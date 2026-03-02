@@ -1,7 +1,9 @@
 import { Room, Client } from "colyseus";
-import { GameState, PlayerSchema, Vector2Schema } from "./schema/GameState";
+import { GameState, PlayerSchema, Vector2Schema, NodeSchema } from "./schema/GameState";
+import { ServerGameLoop } from "./ServerGameLoop";
 
-const PLAYER_IDS = ['P1', 'P2', 'P3', 'P4'];
+type PlayerId = "P1" | "P2" | "P3" | "P4";
+const PLAYER_IDS: PlayerId[] = ['P1', 'P2', 'P3', 'P4'];
 const START_POSITIONS = [
     { x: -5, y: 5 }, // P1 logic approx (0,8)
     { x: 5, y: -5 }, // P2 approx (8,0)
@@ -14,12 +16,48 @@ export class GameRoom extends Room<GameState> {
     private timerInterval!: NodeJS.Timeout;
     private hiddenWaypoints = new Map<string, { x: number, y: number }[]>();
     private disconnectedTimeout = new Map<string, NodeJS.Timeout>();
+    private gameLoop!: ServerGameLoop;
 
     onCreate(options: any) {
         this.setState(new GameState());
 
-        const roomName = options.roomName || `Room ${this.roomId}`;
-        this.setMetadata({ roomName, active: true });
+        // Initialize Map
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                const offsetI = i - 4;
+                const offsetJ = j - 4;
+                const x = (offsetI - offsetJ) * 5 * Math.cos(Math.PI / 4);
+                const y = (offsetI + offsetJ) * 5 * Math.sin(Math.PI / 4);
+                const id = `${i},${j}`;
+
+                const isP1Base = (i === 0 && j === 8);
+                const isP2Base = (i === 8 && j === 0);
+                const isP3Base = (i === 0 && j === 0);
+                const isP4Base = (i === 8 && j === 8);
+                const isBase = isP1Base || isP2Base || isP3Base || isP4Base;
+
+                const node = new NodeSchema();
+                node.id = id;
+                node.gridI = i;
+                node.gridJ = j;
+                node.pos.x = x;
+                node.pos.y = y;
+                node.owner = "";
+                node.capturedThisRound = false;
+                node.isBase = isBase;
+
+                this.state.nodes.set(id, node);
+            }
+        }
+
+        this.gameLoop = new ServerGameLoop(this.state, () => {
+            // Callback when MOVING is finished
+            this.state.round += 1;
+            this.startPathSettingPhase();
+        });
+
+        this.roomName = options.roomName || `Room ${this.roomId}`;
+        this.setMetadata({ roomName: this.roomName, active: true });
 
         this.onMessage("submitWaypoints", (client, message: { waypoints: { x: number, y: number }[] }) => {
             const playerPath = this.state.players.get(client.sessionId);
@@ -30,12 +68,14 @@ export class GameRoom extends Room<GameState> {
             }
         });
 
-        this.onMessage("animFinished", (client) => {
-            const playerPath = this.state.players.get(client.sessionId);
-            if (playerPath && this.state.phase === "MOVING") {
-                playerPath.ready = false; // Reset for next setting phase
+        this.onMessage("playAgain", (client) => {
+            if (this.state.phase === "FINISHED") {
+                this.resetGame();
             }
-            this.checkAllAnimFinished();
+        });
+
+        this.onMessage("animFinished", (client) => {
+            // No longer used, handled by ServerGameLoop fully
         });
 
         this.onMessage("submitAgentWaypoints", (client, message: { targetId: string, waypoints: { x: number, y: number }[] }) => {
@@ -117,6 +157,8 @@ export class GameRoom extends Room<GameState> {
         // We defer exact start positions to the client logic or sync it roughly
         player.startPos.x = START_POSITIONS[playerIndex]?.x || 0;
         player.startPos.y = START_POSITIONS[playerIndex]?.y || 0;
+        player.currentPos.x = player.startPos.x;
+        player.currentPos.y = player.startPos.y;
 
         this.state.players.set(client.sessionId, player);
 
@@ -167,6 +209,14 @@ export class GameRoom extends Room<GameState> {
         }
     }
 
+    private getActiveIds(): PlayerId[] {
+        const ids: PlayerId[] = [];
+        this.state.players.forEach((p) => {
+            if (p.connected) ids.push(p.id as PlayerId);
+        });
+        return ids;
+    }
+
     private migrateHostIfNecessary(leftSessionId: string) {
         if (this.state.hostSessionId === leftSessionId) {
             // Find a new connected player
@@ -189,6 +239,11 @@ export class GameRoom extends Room<GameState> {
     onDispose() {
         console.log("room", this.roomId, "disposing...");
         clearInterval(this.timerInterval);
+        this.disconnectedTimeout.forEach((timeout) => clearTimeout(timeout));
+        this.disconnectedTimeout.clear();
+        if (this.gameLoop) {
+            this.gameLoop.dispose();
+        }
     }
 
     private startPathSettingPhase() {
@@ -201,6 +256,17 @@ export class GameRoom extends Room<GameState> {
         }
 
         console.log("Starting Path Setting Phase (Round " + this.state.round + ")");
+
+        // Update isBase for corners based on actually connected players.
+        // P1 is always 0,8. P2 is 8,0. P3 is 0,0. P4 is 8,8.
+        const activeIds = this.getActiveIds();
+        this.state.nodes.forEach(node => {
+            if (node.gridI === 0 && node.gridJ === 8) { node.isBase = true; } // P1 always exists
+            else if (node.gridI === 8 && node.gridJ === 0) { node.isBase = activeIds.includes('P2'); }
+            else if (node.gridI === 0 && node.gridJ === 0) { node.isBase = activeIds.includes('P3'); }
+            else if (node.gridI === 8 && node.gridJ === 8) { node.isBase = activeIds.includes('P4'); }
+        });
+
         this.hiddenWaypoints.clear();
         this.state.phase = "SETTING_PATH";
         this.state.timer = 30.0;
@@ -258,7 +324,7 @@ export class GameRoom extends Room<GameState> {
         console.log("Broadcasting move command");
         clearInterval(this.timerInterval);
         this.state.phase = "MOVING";
-        this.setMetadata({ roomName: this.metadata.roomName, active: false }); // Hide from lobby once moving
+        this.setMetadata({ roomName: this.roomName, active: false }); // Hide from lobby once moving
 
         // Transfer hidden waypoints to public schema
         this.hiddenWaypoints.forEach((wps, sessionId) => {
@@ -274,15 +340,33 @@ export class GameRoom extends Room<GameState> {
             }
         });
 
-        // Let the clients figure out animation for 5 seconds
-        // Once they finish, they'll send animFinished.
-        // As a fallback, server sets a timer to resume SETTING_PATH after 5 + grace seconds 
-        setTimeout(() => {
-            if (this.state.phase === "MOVING") {
-                this.startPathSettingPhase();
-                this.state.round += 1;
-            }
-        }, 6000); // 5s move + 1s grace
+        this.gameLoop.startMoving();
+    }
+
+    private resetGame() {
+        this.state.round = 1;
+        this.state.phase = "WAITING";
+        this.state.timer = 30;
+        this.state.segments.clear();
+        this.state.nodes.forEach(n => {
+            n.owner = "";
+            n.capturedThisRound = false;
+        });
+
+        const activeIds = Array.from(this.state.players.values()).map(p => p.id);
+
+        this.state.players.forEach((p) => {
+            p.ready = false;
+            p.waypoints.clear();
+            const playerIndex = PLAYER_IDS.indexOf(p.id as PlayerId);
+            p.startPos.x = START_POSITIONS[playerIndex]?.x || 0;
+            p.startPos.y = START_POSITIONS[playerIndex]?.y || 0;
+            p.currentPos.x = p.startPos.x;
+            p.currentPos.y = p.startPos.y;
+        });
+
+        this.setMetadata({ roomName: this.roomName, active: true });
+        this.checkLobbyReady();
     }
 
     private checkAllAnimFinished() {
