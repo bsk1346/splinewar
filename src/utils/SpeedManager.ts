@@ -32,17 +32,17 @@ export class SpeedManager {
     }
 
     public triggerBuff() {
-        this.buffTimer = 0.7;
+        this.buffTimer = 0.8;
         this.buffCombo += 1;
     }
 
     public triggerStealBuff() {
-        this.stealTimer = 0.7;
+        this.stealTimer = 0.8;
         this.stealCombo += 1;
     }
 
     public triggerDebuff() {
-        this.debuffTimer = 0.7;
+        this.debuffTimer = 0.8;
         this.debuffCombo += 1;
     }
 
