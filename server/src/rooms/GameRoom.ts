@@ -4,11 +4,19 @@ import { ServerGameLoop } from "./ServerGameLoop";
 
 type PlayerId = "P1" | "P2" | "P3" | "P4";
 const PLAYER_IDS: PlayerId[] = ['P1', 'P2', 'P3', 'P4'];
+function getGridPos(i: number, j: number) {
+    const offsetI = i - 4;
+    const offsetJ = j - 4;
+    const x = (offsetI - offsetJ) * 5 * Math.cos(Math.PI / 4);
+    const y = (offsetI + offsetJ) * 5 * Math.sin(Math.PI / 4);
+    return { x, y };
+}
+
 const START_POSITIONS = [
-    { x: -5, y: 5 }, // P1 logic approx (0,8)
-    { x: 5, y: -5 }, // P2 approx (8,0)
-    { x: -5, y: -5 }, // P3 approx (0,0)
-    { x: 5, y: 5 }   // P4 approx (8,8)
+    getGridPos(0, 8), // P1 at grid (0,8)
+    getGridPos(8, 0), // P2 at grid (8,0)
+    getGridPos(0, 0), // P3 at grid (0,0)
+    getGridPos(8, 8)  // P4 at grid (8,8)
 ];
 
 export class GameRoom extends Room<GameState> {
