@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGameState, type NodeData, type PlayerId } from '../store/useGameState';
 import { useGameLoop } from '../hooks/useGameLoop';
 import { AIManager, type AIMode } from '../utils/AIManager';
@@ -14,6 +14,8 @@ export const CanvasRenderer: React.FC = () => {
     // AI Settings
     const activeAIs = useGameState(s => s.activeAIs);
     const aiModes = useGameState(s => s.aiModes);
+
+    const [isConfigOpen, setIsConfigOpen] = useState(false);
 
     useEffect(() => {
         useGameState.getState().initMap();
@@ -63,39 +65,51 @@ export const CanvasRenderer: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#111', minHeight: '100vh', color: 'white', fontFamily: 'sans-serif', paddingBottom: '40px' }}>
             <h2 style={{ margin: '10px 0' }}>Round: {round} / 7 | Phase: {phase}</h2>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px', background: '#222', padding: '10px 20px', borderRadius: '8px', alignItems: 'flex-start', maxWidth: '90vw' }}>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 'bold' }}>Number of AI Opponents:</span>
-                    <select
-                        value={activeAIs}
-                        onChange={(e) => useGameState.getState().setActiveAIs(parseInt(e.target.value))}
-                        style={{ padding: '5px 10px', background: '#444', color: 'white', border: 'none', borderRadius: '4px' }}
-                        disabled={phase !== 'SETTING_PATH'}
-                    >
-                        <option value={1}>1 (P2)</option>
-                        <option value={2}>2 (P2, P3)</option>
-                        <option value={3}>3 (P2, P3, P4)</option>
-                    </select>
-                </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '10px', background: '#222', borderRadius: '8px', overflow: 'hidden', maxWidth: '90vw' }}>
+                <button
+                    onClick={() => setIsConfigOpen(!isConfigOpen)}
+                    style={{ padding: '10px', background: '#333', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}
+                >
+                    <span>⚙️ AI Settings ({activeAIs} Opponents)</span>
+                    <span>{isConfigOpen ? '▲' : '▼'}</span>
+                </button>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                    {activeAiList.map(ai => (
-                        <div key={ai} style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #555', padding: '5px 10px', borderRadius: '4px' }}>
-                            <span style={{ color: PLAYER_COLORS[ai], fontWeight: 'bold' }}>{ai} AI:</span>
+                {isConfigOpen && (
+                    <div style={{ padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 'bold' }}>Number of AI Opponents:</span>
                             <select
-                                value={aiModes[ai]}
-                                onChange={(e) => handleSetAIMode(ai, e.target.value as AIMode)}
-                                style={{ padding: '5px', background: '#333', color: 'white', border: '1px solid #555', borderRadius: '4px', fontSize: '13px' }}
+                                value={activeAIs}
+                                onChange={(e) => useGameState.getState().setActiveAIs(parseInt(e.target.value))}
+                                style={{ padding: '5px 10px', background: '#444', color: 'white', border: 'none', borderRadius: '4px' }}
                                 disabled={phase !== 'SETTING_PATH'}
                             >
-                                <option value="RANDOM">Random</option>
-                                <option value="GREEDY">Greedy</option>
-                                <option value="AGGRESSIVE">Aggressive</option>
-                                <option value="TRAJECTORY">Trajectory</option>
+                                <option value={1}>1 (P2)</option>
+                                <option value={2}>2 (P2, P3)</option>
+                                <option value={3}>3 (P2, P3, P4)</option>
                             </select>
                         </div>
-                    ))}
-                </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                            {activeAiList.map(ai => (
+                                <div key={ai} style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #555', padding: '5px 10px', borderRadius: '4px' }}>
+                                    <span style={{ color: PLAYER_COLORS[ai], fontWeight: 'bold' }}>{ai} AI:</span>
+                                    <select
+                                        value={aiModes[ai]}
+                                        onChange={(e) => handleSetAIMode(ai, e.target.value as AIMode)}
+                                        style={{ padding: '5px', background: '#333', color: 'white', border: '1px solid #555', borderRadius: '4px', fontSize: '13px' }}
+                                        disabled={phase !== 'SETTING_PATH'}
+                                    >
+                                        <option value="RANDOM">Random</option>
+                                        <option value="GREEDY">Greedy</option>
+                                        <option value="AGGRESSIVE">Aggressive</option>
+                                        <option value="TRAJECTORY">Trajectory</option>
+                                    </select>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <SharedCanvas
