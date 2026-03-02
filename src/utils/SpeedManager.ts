@@ -58,7 +58,7 @@ export class SpeedManager {
         // Vbase = Vorigin + 3n/20
         const vBase = origin + (3 * n / 20);
 
-        let vCurrent = vBase * Math.pow(1.1, this.buffCombo) * Math.pow(0.7, this.debuffCombo);
+        let vCurrent = vBase * Math.pow(1.15, this.buffCombo) * Math.pow(0.7, this.debuffCombo);
 
         if (m > n) {
             // 강탈 시 역전 폭발 가중치
