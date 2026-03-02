@@ -46,7 +46,10 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             setTimerDisplay(s.phase === 'SETTING_PATH' ? s.timer : 0);
 
             const me = s.players.get(room.sessionId);
-            if (me) setIsReady(me.ready);
+            if (me) {
+                setIsReady(me.ready);
+                if (myPlayerId !== me.id) setMyPlayerId(me.id as PlayerId);
+            }
 
             if (s.phase === 'MOVING' && !isMovingRef.current) {
                 isMovingRef.current = true;
@@ -152,8 +155,25 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             }
         });
 
-        const targetPos = (nearestNode as NodeData | null)?.pos || { x: logicalX, y: logicalY };
-        state.setWaypoints(myPlayerId, [...state.players[myPlayerId].waypoints, targetPos]);
+        const myWp = state.players[myPlayerId].waypoints;
+
+        let startPos = { x: 0, y: 0 };
+        room.state.players.forEach((p, sId) => {
+            if (sId === room.sessionId) {
+                startPos = { x: p.startPos.x, y: p.startPos.y };
+            }
+        });
+
+        const lastNodePos = myWp.length > 0 ? myWp[myWp.length - 1] : startPos;
+
+        if (nearestNode) {
+            // Distance Check - Path Building (Hexagonal Adjacent Check)
+            const d = Math.hypot((nearestNode as NodeData).pos.x - lastNodePos.x, (nearestNode as NodeData).pos.y - lastNodePos.y);
+
+            if (d <= 4.0) {
+                state.setWaypoints(myPlayerId, [...myWp, (nearestNode as NodeData).pos]);
+            }
+        }
     };
 
     const handleClearPath = () => {

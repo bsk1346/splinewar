@@ -32,17 +32,17 @@ export class SpeedManager {
     }
 
     public triggerBuff() {
-        this.buffTimer = 0.8;
+        this.buffTimer = 0.7;
         this.buffCombo += 1;
     }
 
     public triggerStealBuff() {
-        this.stealTimer = 0.8;
+        this.stealTimer = 0.7;
         this.stealCombo += 1;
     }
 
     public triggerDebuff() {
-        this.debuffTimer = 0.8;
+        this.debuffTimer = 0.7;
         this.debuffCombo += 1;
     }
 
@@ -55,8 +55,8 @@ export class SpeedManager {
         let origin = 4;
         if (hasPenaltyTimeRemaining) origin *= 0.8; // 패널티
 
-        // Vbase = Vorigin + n/5
-        const vBase = origin + (n / 5);
+        // Vbase = Vorigin + 3n/20
+        const vBase = origin + (3 * n / 20);
 
         let vCurrent = vBase * Math.pow(1.2, this.buffCombo) * Math.pow(0.7, this.debuffCombo);
 

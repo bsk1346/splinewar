@@ -92,9 +92,13 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
                         renderPos[pid] = { x: p.currentPos.x, y: p.currentPos.y };
                         renderStartPos[pid] = { x: p.startPos.x, y: p.startPos.y };
                         if (pid === myPlayerId) {
-                            renderMyWp = Array.from(p.waypoints)
-                                .filter(w => w !== undefined && w !== null)
-                                .map((w: any) => ({ x: w.x, y: w.y }));
+                            if (phase === 'SETTING_PATH') {
+                                renderMyWp = zustandState.players[myPlayerId].waypoints;
+                            } else {
+                                renderMyWp = Array.from(p.waypoints)
+                                    .filter(w => w !== undefined && w !== null)
+                                    .map((w: any) => ({ x: w.x, y: w.y }));
+                            }
                         }
                     }
                 });
