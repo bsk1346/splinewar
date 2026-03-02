@@ -68,14 +68,9 @@ export const useGameLoop = () => {
         timer.current = 0; // Move timer acts upwards to 5
     }, []);
 
-    const handleCollisions = () => {
+    const handleCollisions = (testActivePlayers: string[]) => {
         const state = useGameState.getState();
         const captureRadius = 0.5;
-
-        // Get active players via state
-        const activePlayers: PlayerId[] = state.multiplayerActiveIds.length > 0
-            ? state.multiplayerActiveIds
-            : ['P1', ...(['P2', 'P3', 'P4'].slice(0, state.activeAIs))] as PlayerId[];
 
         // Node Capture
         Object.values(state.nodes).forEach(node => {
@@ -83,10 +78,10 @@ export const useGameLoop = () => {
 
             // Find all active players touching node
             const hitters: PlayerId[] = [];
-            activePlayers.forEach(p => {
-                const pos = posRef.current[p];
+            testActivePlayers.forEach(p => {
+                const pos = posRef.current[p as PlayerId];
                 const d = Math.hypot(pos.x - node.pos.x, pos.y - node.pos.y);
-                if (d <= captureRadius) hitters.push(p);
+                if (d <= captureRadius) hitters.push(p as PlayerId);
             });
 
             if (hitters.length > 1) {
@@ -110,10 +105,10 @@ export const useGameLoop = () => {
             if (!seg.active) return;
 
             const hitters: PlayerId[] = [];
-            activePlayers.forEach(p => {
-                const pos = posRef.current[p];
+            testActivePlayers.forEach(p => {
+                const pos = posRef.current[p as PlayerId];
                 const hit = PhysicsUtils.isCircleCollidingWithLine(pos, captureRadius, seg.p1, seg.p2);
-                if (hit) hitters.push(p);
+                if (hit) hitters.push(p as PlayerId);
             });
 
             if (hitters.length > 1) {
@@ -175,12 +170,13 @@ export const useGameLoop = () => {
                 ? state.multiplayerActiveIds
                 : ['P1', ...(['P2', 'P3', 'P4'].slice(0, state.activeAIs))] as PlayerId[];
 
+            const captureRadius = 0.5;
+
+            // Collect active players' speeds to find maximum potential distance
+            const currentSpeeds: Record<PlayerId, number> = {} as any;
             activePlayers.forEach(p => {
                 spdRef.current[p].updateCombos(dt);
-
                 const ownedNodes = Object.values(state.nodes).filter(n => n.owner === p).length;
-
-                // Find max opponent nodes
                 let maxOpponentNodes = 0;
                 activePlayers.forEach(opp => {
                     if (opp !== p) {
@@ -189,20 +185,34 @@ export const useGameLoop = () => {
                     }
                 });
 
-                const speed = spdRef.current[p].calculateCurrentSpeed(
+                currentSpeeds[p] = spdRef.current[p].calculateCurrentSpeed(
                     ownedNodes,
                     maxOpponentNodes,
                     state.players[p].failedLastRound && timer.current <= 1.0
                 );
-
-                distRef.current[p] += speed * dt;
-
-                if (trajRef.current[p]) {
-                    posRef.current[p] = trajRef.current[p].getPointAtDistance(distRef.current[p]);
-                }
             });
 
-            handleCollisions();
+            // Physics Sub-stepping
+            const maxSpeed = Math.max(...activePlayers.map(p => currentSpeeds[p]));
+            const maxDistThisFrame = maxSpeed * dt;
+
+            // Sub-step size: guarantees no entity moves more than captureRadius (0.5) in one step
+            const STEP_SIZE = captureRadius * 0.8;
+            const steps = Math.max(1, Math.ceil(maxDistThisFrame / STEP_SIZE));
+            const stepDt = dt / steps;
+
+            for (let s = 0; s < steps; s++) {
+                // Move players by stepDt
+                activePlayers.forEach(p => {
+                    distRef.current[p] += currentSpeeds[p] * stepDt;
+                    if (trajRef.current[p]) {
+                        posRef.current[p] = trajRef.current[p]!.getPointAtDistance(distRef.current[p]);
+                    }
+                });
+
+                // Check collisions at this sub-step
+                handleCollisions(activePlayers as string[]);
+            }
 
             if (timer.current >= 5.0) {
                 const failedStates = {} as Record<PlayerId, boolean>;

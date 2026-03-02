@@ -29,19 +29,20 @@ export const MultiplayerLobby: React.FC = () => {
 
         let pendingDeletions = new Map<string, ReturnType<typeof setInterval>>();
         let isPolling = false;
+        let isMounted = true;
 
         const initLobby = async () => {
             const client = new Colyseus.Client(getColyseusUrl());
             try {
                 // Instantly run once without waiting for 2s
                 const rooms = await client.getAvailableRooms('game_room');
-                setAvailableRooms(rooms.filter(r => r.metadata?.active !== false));
+                if (isMounted) setAvailableRooms(rooms.filter(r => r.metadata?.active !== false));
             } catch (err) { }
 
             const pollInterval = setInterval(async () => {
                 try {
                     const rooms = await client.getAvailableRooms('game_room');
-                    setAvailableRooms(rooms.filter(r => r.metadata?.active !== false));
+                    if (isMounted) setAvailableRooms(rooms.filter(r => r.metadata?.active !== false));
                 } catch (err) {
                     // console.warn("Failed to poll rooms", err);
                 }
@@ -64,6 +65,7 @@ export const MultiplayerLobby: React.FC = () => {
         window.addEventListener('popstate', handleUnload);
 
         return () => {
+            isMounted = false;
             window.removeEventListener('beforeunload', handleUnload);
             window.removeEventListener('pagehide', handleUnload);
             window.removeEventListener('popstate', handleUnload);
@@ -85,6 +87,7 @@ export const MultiplayerLobby: React.FC = () => {
             const pollInterval = setInterval(async () => {
                 try {
                     const rooms = await client.getAvailableRooms('game_room');
+                    // In-function immediate checks, but rely mostly on unmount resets
                     setAvailableRooms(rooms.filter(r => r.metadata?.active !== false));
                 } catch (err) {
                     // ignore
@@ -126,6 +129,13 @@ export const MultiplayerLobby: React.FC = () => {
 
             newRoom.state.players.onRemove((_player, sessionId) => {
                 setPlayers(prev => prev.filter(p => p.sessionId !== sessionId));
+            });
+
+            newRoom.onLeave((code) => {
+                console.log('Left game room:', code);
+                setStatus('Disconnected from match.');
+                setRoom(null);
+                setPlayers([]);
             });
 
         }).catch(e => {

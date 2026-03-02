@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { useGameState, ALL_PLAYERS, type PlayerId } from '../store/useGameState';
+import { useGameState, ALL_PLAYERS, type PlayerId, type NodeData, type LineSegment } from '../store/useGameState';
+import type { GameState } from '../schema/GameState';
 
 export const MULTIPLIER = 12;
 export const CANVAS_SIZE = 800;
@@ -17,6 +18,7 @@ interface SharedCanvasProps {
     phase: 'SETTING_PATH' | 'MOVING' | 'FINISHED';
 
     isMultiplayer: boolean;
+    roomState?: GameState;
     myPlayerId: PlayerId | 'ALL';
 
     onAnimFinished?: () => void;
@@ -31,7 +33,7 @@ interface SharedCanvasProps {
 }
 
 export const SharedCanvas: React.FC<SharedCanvasProps> = ({
-    step, refs, phase, isMultiplayer, myPlayerId, onAnimFinished, renderTopRightHUD, onPointerDown, zoom = 1, onTouchStart, onTouchMove, children
+    step, refs, phase, isMultiplayer, roomState, myPlayerId, onAnimFinished, renderTopRightHUD, onPointerDown, zoom = 1, onTouchStart, onTouchMove, children
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const sentAnimFinishedRef = useRef(false);
@@ -70,26 +72,76 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
             ctx.translate(CANVAS_SIZE / 2, CANVAS_SIZE / 2);
             ctx.scale(MULTIPLIER, MULTIPLIER);
 
-            const state = useGameState.getState();
+            const zustandState = useGameState.getState();
 
-            let currentActivePlayers: PlayerId[] = [];
-            if (isMultiplayer) {
-                currentActivePlayers = state.multiplayerActiveIds;
+            // Unified Abstraction for rendering data
+            let renderNodes: NodeData[] = [];
+            let renderSegments: LineSegment[] = [];
+            let renderPos: Record<PlayerId, { x: number, y: number }> = { P1: { x: 0, y: 0 }, P2: { x: 0, y: 0 }, P3: { x: 0, y: 0 }, P4: { x: 0, y: 0 } };
+            let renderActivePlayers: PlayerId[] = [];
+            let renderWpP1: { x: number, y: number }[] = [];
+            let renderMyWp: { x: number, y: number }[] = [];
+            let renderStartPos: Record<PlayerId, { x: number, y: number }> = { P1: { x: 0, y: 0 }, P2: { x: 0, y: 0 }, P3: { x: 0, y: 0 }, P4: { x: 0, y: 0 } };
+
+            if (isMultiplayer && roomState) {
+                // Parse Server State
+                roomState.players.forEach(p => {
+                    if (p.connected) {
+                        const pid = p.id as PlayerId;
+                        renderActivePlayers.push(pid);
+                        renderPos[pid] = { x: p.currentPos.x, y: p.currentPos.y };
+                        renderStartPos[pid] = { x: p.startPos.x, y: p.startPos.y };
+                        if (pid === myPlayerId) {
+                            renderMyWp = Array.from(p.waypoints)
+                                .filter(w => w !== undefined && w !== null)
+                                .map((w: any) => ({ x: w.x, y: w.y }));
+                        }
+                    }
+                });
+
+                roomState.nodes.forEach(n => {
+                    renderNodes.push({
+                        id: n.id, gridI: n.gridI, gridJ: n.gridJ,
+                        pos: { x: n.pos.x, y: n.pos.y }, owner: n.owner as PlayerId | null,
+                        capturedThisRound: n.capturedThisRound, isBase: n.isBase
+                    });
+                });
+
+                roomState.segments.forEach(s => {
+                    if (s.active) {
+                        renderSegments.push({
+                            id: s.id, p1: { x: s.p1.x, y: s.p1.y }, p2: { x: s.p2.x, y: s.p2.y },
+                            owner: s.owner as PlayerId, active: s.active, createdAtRound: s.createdAtRound
+                        });
+                    }
+                });
             } else {
-                currentActivePlayers.push('P1');
-                if (state.activeAIs >= 1) currentActivePlayers.push('P2');
-                if (state.activeAIs >= 2) currentActivePlayers.push('P3');
-                if (state.activeAIs >= 3) currentActivePlayers.push('P4');
+                // Parse Zustand State
+                renderActivePlayers.push('P1');
+                if (zustandState.activeAIs >= 1) renderActivePlayers.push('P2');
+                if (zustandState.activeAIs >= 2) renderActivePlayers.push('P3');
+                if (zustandState.activeAIs >= 3) renderActivePlayers.push('P4');
+
+                renderNodes = Object.values(zustandState.nodes);
+                renderSegments = zustandState.segments;
+
+                ALL_PLAYERS.forEach(p => {
+                    renderPos[p] = refs.posRef.current[p];
+                    renderStartPos[p] = zustandState.players[p].startPos;
+                });
+
+                renderWpP1 = zustandState.players['P1'].waypoints;
+                if (myPlayerId !== 'ALL') renderMyWp = zustandState.players[myPlayerId].waypoints;
             }
 
             // Render Nodes
-            Object.values(state.nodes).forEach(node => {
+            renderNodes.forEach(node => {
                 ctx.beginPath();
                 let renderAsBase = node.isBase;
-                if (node.gridI === 0 && node.gridJ === 8 && !currentActivePlayers.includes('P1')) renderAsBase = false;
-                else if (node.gridI === 8 && node.gridJ === 0 && !currentActivePlayers.includes('P2')) renderAsBase = false;
-                else if (node.gridI === 0 && node.gridJ === 0 && !currentActivePlayers.includes('P3')) renderAsBase = false;
-                else if (node.gridI === 8 && node.gridJ === 8 && !currentActivePlayers.includes('P4')) renderAsBase = false;
+                if (node.gridI === 0 && node.gridJ === 8 && !renderActivePlayers.includes('P1')) renderAsBase = false;
+                else if (node.gridI === 8 && node.gridJ === 0 && !renderActivePlayers.includes('P2')) renderAsBase = false;
+                else if (node.gridI === 0 && node.gridJ === 0 && !renderActivePlayers.includes('P3')) renderAsBase = false;
+                else if (node.gridI === 8 && node.gridJ === 8 && !renderActivePlayers.includes('P4')) renderAsBase = false;
 
                 ctx.arc(node.pos.x, node.pos.y, renderAsBase ? 0.6 : 0.2, 0, Math.PI * 2);
 
@@ -99,7 +151,8 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
                     else if (node.gridI === 0 && node.gridJ === 0) ctx.fillStyle = PLAYER_COLORS['P3'];
                     else if (node.gridI === 8 && node.gridJ === 8) ctx.fillStyle = PLAYER_COLORS['P4'];
                 } else {
-                    ctx.fillStyle = node.owner && currentActivePlayers.includes(node.owner) ? PLAYER_COLORS[node.owner] : '#555';
+                    const ownerStr = node.owner as string;
+                    ctx.fillStyle = ownerStr && ownerStr !== "" && renderActivePlayers.includes(ownerStr as PlayerId) ? PLAYER_COLORS[ownerStr as PlayerId] : '#555';
                 }
 
                 ctx.fill();
@@ -109,11 +162,38 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
                     ctx.lineWidth = 0.05;
                     ctx.stroke();
                 }
+
+                // Initial Highlight Ping (Round 1, first 3 seconds)
+                if (renderAsBase && zustandState.round === 1 && phase === 'SETTING_PATH' && (30 - refs.timer.current) <= 3) {
+                    const elapsed = 30 - refs.timer.current; // 0 to 3
+                    const pingRadius = 0.6 + (elapsed % 1.5) * 1.5;
+                    const pingAlpha = Math.max(0, 1 - (elapsed % 1.5) / 1.5);
+
+                    let pingColor = '255, 255, 255';
+                    if (node.gridI === 0 && node.gridJ === 8 && (myPlayerId === 'P1' || myPlayerId === 'ALL')) pingColor = '52, 152, 219'; // P1 color
+                    else if (node.gridI === 8 && node.gridJ === 0 && (myPlayerId === 'P2' || myPlayerId === 'ALL')) pingColor = '231, 76, 60';
+                    else if (node.gridI === 0 && node.gridJ === 0 && (myPlayerId === 'P3' || myPlayerId === 'ALL')) pingColor = '241, 196, 15';
+                    else if (node.gridI === 8 && node.gridJ === 8 && (myPlayerId === 'P4' || myPlayerId === 'ALL')) pingColor = '46, 204, 113';
+
+                    // Only draw ping for the player themselves (or all in local)
+                    if (
+                        (node.gridI === 0 && node.gridJ === 8 && (myPlayerId === 'P1' || myPlayerId === 'ALL')) ||
+                        (node.gridI === 8 && node.gridJ === 0 && (myPlayerId === 'P2' || myPlayerId === 'ALL')) ||
+                        (node.gridI === 0 && node.gridJ === 0 && (myPlayerId === 'P3' || myPlayerId === 'ALL')) ||
+                        (node.gridI === 8 && node.gridJ === 8 && (myPlayerId === 'P4' || myPlayerId === 'ALL'))
+                    ) {
+                        ctx.beginPath();
+                        ctx.arc(node.pos.x, node.pos.y, pingRadius, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(${pingColor}, ${pingAlpha})`;
+                        ctx.lineWidth = 0.1;
+                        ctx.stroke();
+                    }
+                }
             });
 
             // Render Segments
-            state.segments.forEach(seg => {
-                if (!seg.active || !currentActivePlayers.includes(seg.owner)) return;
+            renderSegments.forEach(seg => {
+                if (!seg.active || !renderActivePlayers.includes(seg.owner)) return;
                 ctx.beginPath();
                 ctx.moveTo(seg.p1.x, seg.p1.y);
                 ctx.lineTo(seg.p2.x, seg.p2.y);
@@ -136,21 +216,17 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
 
                 if (phase === 'SETTING_PATH') {
                     if (myPlayerId === 'ALL') {
-                        // Drawing P1 waypoints actively
-                        const wpP1 = state.players['P1'].waypoints;
-                        if (wpP1.length > 0) {
+                        if (renderWpP1.length > 0) {
                             ctx.beginPath();
-                            ctx.moveTo(state.players['P1'].startPos.x, state.players['P1'].startPos.y);
-                            wpP1.forEach(wp => ctx.lineTo(wp.x, wp.y));
+                            ctx.moveTo(renderStartPos['P1'].x, renderStartPos['P1'].y);
+                            renderWpP1.forEach(wp => ctx.lineTo(wp.x, wp.y));
                             ctx.stroke();
                         }
                     } else {
-                        // My own path
-                        const myWp = state.players[myPlayerId].waypoints;
-                        if (myWp.length > 0) {
+                        if (renderMyWp.length > 0) {
                             ctx.beginPath();
-                            ctx.moveTo(state.players[myPlayerId].startPos.x, state.players[myPlayerId].startPos.y);
-                            myWp.forEach(wp => ctx.lineTo(wp.x, wp.y));
+                            ctx.moveTo(renderStartPos[myPlayerId].x, renderStartPos[myPlayerId].y);
+                            renderMyWp.forEach(wp => ctx.lineTo(wp.x, wp.y));
                             ctx.stroke();
                         }
                     }
@@ -161,9 +237,9 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
 
             // Render Players
             ALL_PLAYERS.forEach(p => {
-                if (!currentActivePlayers.includes(p)) return;
+                if (!renderActivePlayers.includes(p)) return;
 
-                const pos = refs.posRef.current[p];
+                const pos = renderPos[p];
                 ctx.beginPath();
                 ctx.arc(pos.x, pos.y, 0.5, 0, Math.PI * 2);
 
@@ -180,13 +256,15 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
             ctx.font = '16px monospace';
             ctx.fillStyle = 'white';
 
-            let textY = 20;
-            ALL_PLAYERS.forEach((p) => {
-                if (!currentActivePlayers.includes(p)) return;
-                const spd = refs.spdRef[p];
-                ctx.fillText(`${p} Combo: ${spd.buffCombo}/${spd.debuffCombo}`, 10, textY);
-                textY += 20;
-            });
+            if (!isMultiplayer) {
+                let textY = 20;
+                ALL_PLAYERS.forEach((p) => {
+                    if (!renderActivePlayers.includes(p)) return;
+                    const spd = refs.spdRef[p];
+                    ctx.fillText(`${p} Combo: ${spd.buffCombo}/${spd.debuffCombo}`, 10, textY);
+                    textY += 20;
+                });
+            }
 
             renderTopRightHUD(ctx, refs.timer.current);
 
@@ -200,7 +278,7 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
         }
 
         return () => cancelAnimationFrame(rafId);
-    }, [step, refs, phase, isMultiplayer, myPlayerId, onAnimFinished, renderTopRightHUD]);
+    }, [step, refs, phase, isMultiplayer, roomState, myPlayerId, onAnimFinished, renderTopRightHUD]);
 
     return (
         <div
@@ -228,7 +306,31 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
                     transform: `scale(${zoom})`,
                     transformOrigin: 'center center'
                 }}
-                onPointerDown={onPointerDown}
+                onPointerDown={(e) => {
+                    const canvas = canvasRef.current;
+                    if (!canvas) return;
+                    const rect = canvas.getBoundingClientRect();
+                    // Using getBoundingClientRect directly handles CSS transform scale automatically!
+                    const scaleX = CANVAS_SIZE / rect.width;
+                    const scaleY = CANVAS_SIZE / rect.height;
+
+                    const clientX = e.clientX;
+                    const clientY = e.clientY;
+
+                    // Compute logical pixel offsets relative to the Canvas' native 800x800 resolution
+                    const canvasPixelX = (clientX - rect.left) * scaleX;
+                    const canvasPixelY = (clientY - rect.top) * scaleY;
+
+                    // We modify the synthetic event to pass these pre-calculated canvas pixels
+                    // Or we just pass the raw clientX/Y and let parent handle it if we want.
+                    // To keep things simple, let's inject a custom property or fire a modified event:
+
+                    if (onPointerDown) {
+                        (e as any).canvasPixelX = canvasPixelX;
+                        (e as any).canvasPixelY = canvasPixelY;
+                        onPointerDown(e);
+                    }
+                }}
             />
             {children}
         </div>

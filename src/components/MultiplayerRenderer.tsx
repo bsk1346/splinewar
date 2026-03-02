@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as Colyseus from 'colyseus.js';
 import { GameState } from '../schema/GameState';
 import { useGameState, type NodeData, type PlayerId } from '../store/useGameState';
-import { useGameLoop } from '../hooks/useGameLoop';
 import { AIManager } from '../utils/AIManager';
 import { SharedCanvas, CANVAS_SIZE, MULTIPLIER, PLAYER_COLORS } from './SharedCanvas';
 
@@ -11,8 +10,6 @@ interface Props {
 }
 
 export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
-    const { step, refs, startMoving } = useGameLoop();
-
     const [round, setRound] = useState(room.state.round);
     const [phase, setPhase] = useState<'SETTING_PATH' | 'MOVING' | 'FINISHED'>('SETTING_PATH');
     const [myPlayerId, setMyPlayerId] = useState<PlayerId>('P1');
@@ -22,6 +19,16 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
     const touchPinchRef = useRef<{ initialDist: number, initialZoom: number } | null>(null);
 
     const isMovingRef = useRef(false);
+
+    // Using dummy refs for SharedCanvas since it expects the useGameLoop format
+    // In multiplayer, SharedCanvas will fetch real-time state from `room.state` directly.
+    const dummyRefs = useRef({
+        spdRef: { P1: null, P2: null, P3: null, P4: null },
+        posRef: { current: { P1: { x: 0, y: 0 }, P2: { x: 0, y: 0 }, P3: { x: 0, y: 0 }, P4: { x: 0, y: 0 } } },
+        distRef: { current: { P1: 0, P2: 0, P3: 0, P4: 0 } },
+        trajRef: { current: { P1: null, P2: null, P3: null, P4: null } },
+        timer: { current: 0 }
+    });
 
     useEffect(() => {
         const state = useGameState.getState();
@@ -52,8 +59,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
                     const mappedWP = Array.from(p.waypoints).filter(w => w).map(w => ({ x: w!.x, y: w!.y }));
                     useGameState.getState().setWaypoints(p.id as PlayerId, mappedWP);
                 });
-
-                startMoving();
+                // Note: local startMoving is NO LONGER CALLED. Server handles it.
             }
 
             if (s.phase === 'SETTING_PATH' && isMovingRef.current) {
@@ -109,7 +115,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             window.removeEventListener('beforeunload', handleUnload);
             window.removeEventListener('popstate', handleUnload);
         }
-    }, [room, startMoving]);
+    }, [room]);
 
     // Auto-Submit Logic
     useEffect(() => {
@@ -125,16 +131,15 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
         if (phase !== 'SETTING_PATH') return;
         const state = useGameState.getState();
 
-        const rect = e.currentTarget.getBoundingClientRect();
+        // Use the native event offset that was passed out by SharedCanvas
+        // These are already mapped from Screen -> Canvas Pixel coordinates by SharedCanvas
+        const xCanvasPixel = (e as any).canvasPixelX ?? e.nativeEvent.offsetX;
+        const yCanvasPixel = (e as any).canvasPixelY ?? e.nativeEvent.offsetY;
 
-        const scaleX = CANVAS_SIZE / rect.width;
-        const scaleY = CANVAS_SIZE / rect.height;
-
-        const xScreen = (e.clientX - rect.left) * scaleX;
-        const yScreen = (e.clientY - rect.top) * scaleY;
-
-        const logicalX = (xScreen - CANVAS_SIZE / 2) / MULTIPLIER;
-        const logicalY = (yScreen - CANVAS_SIZE / 2) / MULTIPLIER;
+        // Logical coordinates have an origin at the CENTER of the canvas
+        // And they are scaled down by MULTIPLIER
+        const logicalX = (xCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
+        const logicalY = (yCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
 
         let nearestNode: NodeData | null = null;
         let minDist = 3.0; // Increased snapping max distance for mobile touch ease
@@ -161,12 +166,11 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
     };
 
     const computeWinner = () => {
-        const state = useGameState.getState();
         const counts: Record<string, number> = {};
         let winner = 'None';
         let max = -1;
-        Object.values(state.nodes).forEach(n => {
-            if (n.owner && state.multiplayerActiveIds.includes(n.owner)) {
+        room.state.nodes.forEach(n => {
+            if (n.owner && n.owner !== "") {
                 counts[n.owner] = (counts[n.owner] || 0) + 1;
             }
         });
@@ -187,18 +191,15 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             <h3 style={{ margin: '5px 0' }}>Round: {round > 7 ? 'Game Over' : `${round}/7`} | Phase: {phase} | {phase === 'FINISHED' ? '🏁 Game Over' : (isReady ? '🟢 Ready (Waiting)' : '🔴 Selecting Path')}</h3>
 
             <SharedCanvas
-                step={step}
-                refs={refs}
+                step={() => { }} // Dummy step, unused in multiplayer
+                refs={dummyRefs.current}
                 phase={phase}
                 isMultiplayer={true}
+                roomState={room.state} // Pass the room state for rendering
                 myPlayerId={myPlayerId}
                 onPointerDown={!isReady ? handlePointerDown : undefined}
-                onAnimFinished={() => {
-                    room.send("animFinished");
-                }}
-                renderTopRightHUD={(ctx, timer) => {
+                renderTopRightHUD={(ctx, _localTimer) => {
                     ctx.fillText(`Server Timer: ${timerDisplay.toFixed(1)}`, CANVAS_SIZE - 200, 20);
-                    if (isMovingRef.current) ctx.fillText(`Mov: ${timer.toFixed(1)}/5.0`, CANVAS_SIZE - 200, 40);
                 }}
                 zoom={zoom}
                 onTouchStart={(e) => {
@@ -209,6 +210,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
                 }}
                 onTouchMove={(e) => {
                     if (e.touches.length === 2 && touchPinchRef.current) {
+                        if (touchPinchRef.current.initialDist < 5) return; // Prevent Division By Zero NaN
                         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                         const scale = dist / touchPinchRef.current.initialDist;
                         let newZoom = touchPinchRef.current.initialZoom * scale;
@@ -232,12 +234,11 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
 
                         <button
                             onClick={() => {
-                                room.leave();
-                                window.location.reload();
+                                room.send("playAgain");
                             }}
                             style={{ padding: '15px 30px', marginTop: '40px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold' }}
                         >
-                            로비로 돌아가기 (Return to Lobby)
+                            방 대기실로 돌아가기 (Play Again)
                         </button>
                     </div>
                 )}

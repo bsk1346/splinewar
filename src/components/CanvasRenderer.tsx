@@ -23,12 +23,13 @@ export const CanvasRenderer: React.FC = () => {
         const state = useGameState.getState();
         if (state.phase !== 'SETTING_PATH') return;
 
-        const rect = e.currentTarget.getBoundingClientRect();
-        const xScreen = e.clientX - rect.left;
-        const yScreen = e.clientY - rect.top;
+        // Logical coordinates have an origin at the CENTER of the canvas
+        // And they are scaled down by MULTIPLIER
+        const xCanvasPixel = (e as any).canvasPixelX ?? e.nativeEvent.offsetX;
+        const yCanvasPixel = (e as any).canvasPixelY ?? e.nativeEvent.offsetY;
 
-        const logicalX = (xScreen - CANVAS_SIZE / 2) / MULTIPLIER;
-        const logicalY = (yScreen - CANVAS_SIZE / 2) / MULTIPLIER;
+        const logicalX = (xCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
+        const logicalY = (yCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
 
         // Snapping: Find nearest node
         let nearestNode: NodeData | null = null;
@@ -62,35 +63,39 @@ export const CanvasRenderer: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#111', minHeight: '100vh', color: 'white', fontFamily: 'sans-serif', paddingBottom: '40px' }}>
             <h2 style={{ margin: '10px 0' }}>Round: {round} / 7 | Phase: {phase}</h2>
 
-            <div style={{ display: 'flex', gap: '20px', marginBottom: '10px', background: '#222', padding: '10px 20px', borderRadius: '8px', alignItems: 'center' }}>
-                <span style={{ fontWeight: 'bold' }}>Number of AI Opponents:</span>
-                <select
-                    value={activeAIs}
-                    onChange={(e) => useGameState.getState().setActiveAIs(parseInt(e.target.value))}
-                    style={{ padding: '5px 10px', background: '#444', color: 'white', border: 'none', borderRadius: '4px' }}
-                    disabled={phase !== 'SETTING_PATH'}
-                >
-                    <option value={1}>1 (P2)</option>
-                    <option value={2}>2 (P2, P3)</option>
-                    <option value={3}>3 (P2, P3, P4)</option>
-                </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px', background: '#222', padding: '10px 20px', borderRadius: '8px', alignItems: 'flex-start', maxWidth: '90vw' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 'bold' }}>Number of AI Opponents:</span>
+                    <select
+                        value={activeAIs}
+                        onChange={(e) => useGameState.getState().setActiveAIs(parseInt(e.target.value))}
+                        style={{ padding: '5px 10px', background: '#444', color: 'white', border: 'none', borderRadius: '4px' }}
+                        disabled={phase !== 'SETTING_PATH'}
+                    >
+                        <option value={1}>1 (P2)</option>
+                        <option value={2}>2 (P2, P3)</option>
+                        <option value={3}>3 (P2, P3, P4)</option>
+                    </select>
+                </div>
 
-                {activeAiList.map(ai => (
-                    <div key={ai} style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid #555', paddingLeft: '15px' }}>
-                        <span style={{ color: PLAYER_COLORS[ai], fontWeight: 'bold' }}>{ai}:</span>
-                        <select
-                            value={aiModes[ai]}
-                            onChange={(e) => handleSetAIMode(ai, e.target.value as AIMode)}
-                            style={{ padding: '5px', background: '#333', color: 'white', border: '1px solid #555', borderRadius: '4px', fontSize: '13px' }}
-                            disabled={phase !== 'SETTING_PATH'}
-                        >
-                            <option value="RANDOM">Random</option>
-                            <option value="GREEDY">Greedy</option>
-                            <option value="AGGRESSIVE">Aggressive</option>
-                            <option value="TRAJECTORY">Trajectory</option>
-                        </select>
-                    </div>
-                ))}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    {activeAiList.map(ai => (
+                        <div key={ai} style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #555', padding: '5px 10px', borderRadius: '4px' }}>
+                            <span style={{ color: PLAYER_COLORS[ai], fontWeight: 'bold' }}>{ai} AI:</span>
+                            <select
+                                value={aiModes[ai]}
+                                onChange={(e) => handleSetAIMode(ai, e.target.value as AIMode)}
+                                style={{ padding: '5px', background: '#333', color: 'white', border: '1px solid #555', borderRadius: '4px', fontSize: '13px' }}
+                                disabled={phase !== 'SETTING_PATH'}
+                            >
+                                <option value="RANDOM">Random</option>
+                                <option value="GREEDY">Greedy</option>
+                                <option value="AGGRESSIVE">Aggressive</option>
+                                <option value="TRAJECTORY">Trajectory</option>
+                            </select>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             <SharedCanvas

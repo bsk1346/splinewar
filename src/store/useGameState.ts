@@ -105,10 +105,10 @@ export const useGameState = create<GameState>((set) => ({
                 const y = (offsetI + offsetJ) * 5 * Math.sin(Math.PI / 4);
                 const id = `${i},${j}`;
 
-                const isP1Base = (i === 0 && j === 8); // 6시
-                const isP2Base = (i === 8 && j === 0); // 12시
-                const isP3Base = (i === 0 && j === 0); // 9시
-                const isP4Base = (i === 8 && j === 8); // 3시
+                const isP1Base = (i === 0 && j === 8) && true; // P1 always active
+                const isP2Base = (i === 8 && j === 0) && (state.activeAIs >= 1 || state.multiplayerActiveIds.includes('P2'));
+                const isP3Base = (i === 0 && j === 0) && (state.activeAIs >= 2 || state.multiplayerActiveIds.includes('P3'));
+                const isP4Base = (i === 8 && j === 8) && (state.activeAIs >= 3 || state.multiplayerActiveIds.includes('P4'));
                 const isBase = isP1Base || isP2Base || isP3Base || isP4Base;
 
                 newNodes[id] = {
