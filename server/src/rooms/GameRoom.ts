@@ -17,6 +17,7 @@ export class GameRoom extends Room<GameState> {
     private hiddenWaypoints = new Map<string, { x: number, y: number }[]>();
     private disconnectedTimeout = new Map<string, NodeJS.Timeout>();
     private gameLoop!: ServerGameLoop;
+    private displayRoomName: string = "";
 
     onCreate(options: any) {
         this.setState(new GameState());
@@ -56,8 +57,8 @@ export class GameRoom extends Room<GameState> {
             this.startPathSettingPhase();
         });
 
-        this.roomName = options.roomName || `Room ${this.roomId}`;
-        this.setMetadata({ roomName: this.roomName, active: true });
+        this.displayRoomName = options.roomName || `Room ${this.roomId}`;
+        this.setMetadata({ roomName: this.displayRoomName, active: true });
 
         this.onMessage("submitWaypoints", (client, message: { waypoints: { x: number, y: number }[] }) => {
             const playerPath = this.state.players.get(client.sessionId);
@@ -324,7 +325,7 @@ export class GameRoom extends Room<GameState> {
         console.log("Broadcasting move command");
         clearInterval(this.timerInterval);
         this.state.phase = "MOVING";
-        this.setMetadata({ roomName: this.roomName, active: false }); // Hide from lobby once moving
+        this.setMetadata({ roomName: this.displayRoomName, active: false }); // Hide from lobby once moving
 
         // Transfer hidden waypoints to public schema
         this.hiddenWaypoints.forEach((wps, sessionId) => {
@@ -365,7 +366,7 @@ export class GameRoom extends Room<GameState> {
             p.currentPos.y = p.startPos.y;
         });
 
-        this.setMetadata({ roomName: this.roomName, active: true });
+        this.setMetadata({ roomName: this.displayRoomName, active: true });
         this.checkLobbyReady();
     }
 
