@@ -5,7 +5,7 @@ import type { AIMode } from '../utils/AIManager';
 export type PlayerId = 'P1' | 'P2' | 'P3' | 'P4';
 export const ALL_PLAYERS: PlayerId[] = ['P1', 'P2', 'P3', 'P4'];
 
-export type Phase = 'SETTING_PATH' | 'MOVING';
+export type Phase = 'SETTING_PATH' | 'MOVING' | 'FINISHED';
 
 export interface NodeData {
     id: string;
@@ -61,6 +61,7 @@ interface GameState {
     captureNode: (nodeId: string, player: PlayerId) => void;
     deactivateSegment: (segmentId: string) => void;
     finishMovingPhase: (failedStates: Record<PlayerId, boolean>, endPositions: Record<PlayerId, Vector2>) => void;
+    resetGame: () => void;
 }
 
 const createInitialPlayerState = (id: PlayerId, startPos: Vector2): PlayerState => ({
@@ -264,12 +265,51 @@ export const useGameState = create<GameState>((set) => ({
             };
         });
 
+        const nextRound = state.round + 1;
+        const nextPhase = nextRound > 7 ? 'FINISHED' : 'SETTING_PATH';
+
         return {
-            round: state.round + 1,
-            phase: 'SETTING_PATH',
+            round: nextRound,
+            phase: nextPhase,
             nodes: resetNodes,
             segments: newSegments,
             players: newPlayers
+        };
+    }),
+
+    resetGame: () => set(state => {
+        const newNodes: Record<string, NodeData> = {};
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                const offsetI = i - 4;
+                const offsetJ = j - 4;
+                const x = (offsetI - offsetJ) * 5 * Math.cos(Math.PI / 4);
+                const y = (offsetI + offsetJ) * 5 * Math.sin(Math.PI / 4);
+                const id = `${i},${j}`;
+
+                const isP1Base = (i === 0 && j === 8);
+                const isP2Base = (i === 8 && j === 0) && (state.activeAIs >= 1 || state.multiplayerActiveIds.includes('P2'));
+                const isP3Base = (i === 0 && j === 0) && (state.activeAIs >= 2 || state.multiplayerActiveIds.includes('P3'));
+                const isP4Base = (i === 8 && j === 8) && (state.activeAIs >= 3 || state.multiplayerActiveIds.includes('P4'));
+                const isBase = isP1Base || isP2Base || isP3Base || isP4Base;
+
+                newNodes[id] = {
+                    id, gridI: i, gridJ: j, pos: { x, y }, owner: null, capturedThisRound: false, isBase
+                };
+            }
+        }
+
+        return {
+            nodes: newNodes,
+            players: {
+                P1: createInitialPlayerState('P1', newNodes['0,8'].pos),
+                P2: createInitialPlayerState('P2', newNodes['8,0'].pos),
+                P3: createInitialPlayerState('P3', newNodes['0,0'].pos),
+                P4: createInitialPlayerState('P4', newNodes['8,8'].pos),
+            },
+            round: 1,
+            phase: 'SETTING_PATH',
+            segments: []
         };
     })
 }));

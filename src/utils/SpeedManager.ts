@@ -58,15 +58,15 @@ export class SpeedManager {
         // Vbase = Vorigin + 3n/20
         const vBase = origin + (3 * n / 20);
 
-        let vCurrent = vBase * Math.pow(1.2, this.buffCombo) * Math.pow(0.7, this.debuffCombo);
+        let vCurrent = vBase * Math.pow(1.1, this.buffCombo) * Math.pow(0.7, this.debuffCombo);
 
         if (m > n) {
             // 강탈 시 역전 폭발 가중치
-            const multiplier = 1.1 * ((100 + (m - n)) / 100);
+            const multiplier = 1.05 * ((100 + (m - n)) / 100);
             vCurrent *= Math.pow(multiplier, this.stealCombo);
         } else {
             // 일반 강탈 효과
-            vCurrent *= Math.pow(1.1, this.stealCombo);
+            vCurrent *= Math.pow(1.05, this.stealCombo);
         }
 
         return vCurrent;

@@ -61,6 +61,26 @@ export const CanvasRenderer: React.FC = () => {
     if (activeAIs >= 2) activeAiList.push('P3');
     if (activeAIs >= 3) activeAiList.push('P4');
 
+    const computeWinner = () => {
+        const counts: Record<string, number> = {};
+        let winner = 'None';
+        let max = -1;
+        Object.values(useGameState.getState().nodes).forEach(n => {
+            if (n.owner) {
+                counts[n.owner] = (counts[n.owner] || 0) + 1;
+            }
+        });
+        Object.keys(counts).forEach(pid => {
+            if (counts[pid] > max) {
+                max = counts[pid];
+                winner = pid;
+            }
+        });
+        return { winner, max, counts };
+    };
+
+    const gameOverData = phase === 'FINISHED' ? computeWinner() : null;
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#111', minHeight: '100vh', color: 'white', fontFamily: 'sans-serif', paddingBottom: '40px' }}>
             <h2 style={{ margin: '10px 0' }}>Round: {round} / 7 | Phase: {phase}</h2>
@@ -123,36 +143,62 @@ export const CanvasRenderer: React.FC = () => {
                     const timerDisp = phase === 'SETTING_PATH' ? (30 - timer).toFixed(1) : timer.toFixed(1);
                     ctx.fillText(`Timer: ${timerDisp}`, CANVAS_SIZE - 120, 20);
                 }}
-            />
+            >
+                {phase === 'FINISHED' && gameOverData && (
+                    <div style={{ position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', zIndex: 10 }}>
+                        <h1 style={{ color: '#f1c40f', fontSize: '48px', margin: '0 0 20px 0' }}>🏆 Winner: {gameOverData.winner}</h1>
+                        <h2 style={{ color: 'white', margin: '10px 0' }}>Nodes Captured: {gameOverData.max}</h2>
 
-            <div style={{ marginTop: '20px', display: 'flex', gap: '15px' }}>
-                <button
-                    onClick={() => {
-                        const state = useGameState.getState();
+                        <div style={{ background: '#222', padding: '20px', borderRadius: '8px', marginTop: '20px', minWidth: '200px' }}>
+                            {Object.entries(gameOverData.counts).sort((a, b) => b[1] - a[1]).map(([p, count]) => (
+                                <div key={p} style={{ fontSize: '18px', margin: '10px 0', color: PLAYER_COLORS[p as PlayerId] }}>
+                                    {p} : {count} Nodes
+                                </div>
+                            ))}
+                        </div>
 
-                        // Generate AI waypoints for active AIs
-                        activeAiList.forEach(aiPlayer => {
-                            const aiPts = AIManager.generateWaypoints(
-                                state.aiModes[aiPlayer],
-                                state.players[aiPlayer].startPos,
-                                state.nodes,
-                                state.segments,
-                                [], aiPlayer
-                            );
-                            state.setWaypoints(aiPlayer, aiPts);
-                        });
+                        <button
+                            onClick={() => {
+                                useGameState.getState().resetGame();
+                            }}
+                            style={{ padding: '15px 30px', marginTop: '40px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold' }}
+                        >
+                            다시 플레이하기 (Play Again)
+                        </button>
+                    </div>
+                )}
+            </SharedCanvas>
 
-                        state.setReady('P1', true);
-                        activeAiList.forEach(ai => state.setReady(ai, true));
+            {phase !== 'FINISHED' && (
+                <div style={{ marginTop: '20px', display: 'flex', gap: '15px' }}>
+                    <button
+                        onClick={() => {
+                            const state = useGameState.getState();
 
-                        startMoving();
-                    }}
-                    style={{ padding: '10px 20px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
-                    disabled={phase !== 'SETTING_PATH'}
-                >
-                    P1 Ready (Start Move)
-                </button>
-            </div>
+                            // Generate AI waypoints for active AIs
+                            activeAiList.forEach(aiPlayer => {
+                                const aiPts = AIManager.generateWaypoints(
+                                    state.aiModes[aiPlayer],
+                                    state.players[aiPlayer].startPos,
+                                    state.nodes,
+                                    state.segments,
+                                    [], aiPlayer
+                                );
+                                state.setWaypoints(aiPlayer, aiPts);
+                            });
+
+                            state.setReady('P1', true);
+                            activeAiList.forEach(ai => state.setReady(ai, true));
+
+                            startMoving();
+                        }}
+                        style={{ padding: '10px 20px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+                        disabled={phase !== 'SETTING_PATH'}
+                    >
+                        P1 Ready (Start Move)
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
