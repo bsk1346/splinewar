@@ -173,6 +173,15 @@ export const CanvasRenderer: React.FC = () => {
                 <div style={{ marginTop: '20px', display: 'flex', gap: '15px' }}>
                     <button
                         onClick={() => {
+                            useGameState.getState().setWaypoints('P1', []);
+                        }}
+                        style={{ padding: '10px 20px', background: '#555', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+                        disabled={phase !== 'SETTING_PATH'}
+                    >
+                        Clear Path
+                    </button>
+                    <button
+                        onClick={() => {
                             const state = useGameState.getState();
 
                             // Generate AI waypoints for active AIs
