@@ -145,7 +145,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
         const logicalY = (yCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
 
         let nearestNode: NodeData | null = null;
-        let minDist = 6.0; // Increased snapping max distance to allow diagonals (grid diag dist is 5.0)
+        let minDist = 8.0; // Increased snapping max distance to allow diagonals
 
         Object.values(state.nodes).forEach(node => {
             const d = Math.hypot(node.pos.x - logicalX, node.pos.y - logicalY);
@@ -155,21 +155,26 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             }
         });
 
-        // Ensure the player state exists locally before destructuring
         const myPlayerState = state.players[myPlayerId];
         if (!myPlayerState) return;
 
         const myWp = myPlayerState.waypoints || [];
-        const startPos = myPlayerState.startPos || { x: 0, y: 0 };
+
+        // Preserve room.state for startPos since local state might not be ready yet
+        let startPos = { x: 0, y: 0 };
+        room.state.players.forEach((p, sId) => {
+            if (sId === room.sessionId) {
+                startPos = { x: p.startPos.x, y: p.startPos.y };
+            }
+        });
+
         const lastNodePos = myWp.length > 0 ? myWp[myWp.length - 1] : startPos;
 
         if (nearestNode) {
-            // Distance Check - Path Building (Hexagonal Adjacent Check)
+            // Distance Check - Path Building (Hexagonal Adjacent Check, allow 8.0 for diagonals)
             const d = Math.hypot((nearestNode as NodeData).pos.x - lastNodePos.x, (nearestNode as NodeData).pos.y - lastNodePos.y);
 
-            // 노드 간의 물리적 거리는 5.0입니다. 따라서 인접 노드 선택을 위해 6.0 이하로 설정합니다.
-            // (동일한 노드를 중복으로 찍는 것을 방지하기 위해 d > 0.1 조건 추가)
-            if (d > 0.1 && d <= 6.0) {
+            if (d > 0.1 && d <= 8.0) {
                 state.setWaypoints(myPlayerId, [...myWp, (nearestNode as NodeData).pos]);
             }
         }

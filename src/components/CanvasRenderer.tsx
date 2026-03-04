@@ -35,7 +35,7 @@ export const CanvasRenderer: React.FC = () => {
 
         // Snapping: Find nearest node
         let nearestNode: NodeData | null = null;
-        let minDist = 6.0; // Increased snapping max distance to allow diagonals
+        let minDist = 8.0; // Increased snapping max distance to allow diagonals
 
         Object.values(state.nodes).forEach(node => {
             const d = Math.hypot(node.pos.x - logicalX, node.pos.y - logicalY);
