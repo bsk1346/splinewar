@@ -38,11 +38,6 @@ export const useGameLoop = () => {
     const startMoving = useCallback(() => {
         const state = useGameState.getState();
 
-        // Determine active players based on activeAIs
-        // P1 is always active. 
-        // 1 AI: P2
-        // 2 AI: P2, P3
-        // 3 AI: P2, P3, P4
         const activePlayers: PlayerId[] = state.multiplayerActiveIds.length > 0
             ? state.multiplayerActiveIds
             : ['P1', ...(['P2', 'P3', 'P4'].slice(0, state.activeAIs))] as PlayerId[];
@@ -51,32 +46,34 @@ export const useGameLoop = () => {
             const playerState = state.players[p];
             const rawWps = playerState.waypoints || [];
             const wps = [playerState.startPos, ...rawWps];
-            if (wps.length < 2) wps.push(playerState.startPos); // Fallback for empty paths to prevent crash
+            if (wps.length < 2) wps.push(playerState.startPos); 
 
             trajRef.current[p] = new SplineTrajectory(wps);
             posRef.current[p] = { ...playerState.startPos };
             distRef.current[p] = 0;
         });
 
-        // Clear traj for inactive AIs
         ALL_PLAYERS.forEach(p => {
             if (!activePlayers.includes(p)) {
                 trajRef.current[p] = null;
             }
         });
 
-        timer.current = 0; // Move timer acts upwards to 5
+        timer.current = 0; 
     }, []);
 
     const handleCollisions = (testActivePlayers: string[]) => {
         const state = useGameState.getState();
         const captureRadius = 0.5;
 
+        // [수정됨] 트리거 함수(SpeedManager)에 넘겨줄 아군 점령지 갯수(n)를 계산하는 헬퍼 함수
+        const getOwnedNodes = (playerId: PlayerId) => 
+            Object.values(state.nodes).filter(n => n.owner === playerId).length;
+
         // Node Capture
         Object.values(state.nodes).forEach(node => {
             if (node.capturedThisRound || node.isBase) return;
 
-            // Find all active players touching node
             const hitters: PlayerId[] = [];
             testActivePlayers.forEach(p => {
                 const pos = posRef.current[p as PlayerId];
@@ -92,10 +89,12 @@ export const useGameLoop = () => {
 
                 state.captureNode(node.id, p);
 
+                // [수정됨] n값을 인자로 넘겨주도록 수정
+                const currentNodes = getOwnedNodes(p);
                 if (oldOwner !== null && oldOwner !== p) {
-                    spdRef.current[p].triggerStealBuff();
+                    spdRef.current[p].triggerStealBuff(currentNodes);
                 } else if (oldOwner !== p) {
-                    spdRef.current[p].triggerBuff();
+                    spdRef.current[p].triggerBuff(currentNodes);
                 }
             }
         });
@@ -115,10 +114,14 @@ export const useGameLoop = () => {
                 // Simultaneous collision -> ignore
             } else if (hitters.length === 1) {
                 const p = hitters[0];
+                const currentNodes = getOwnedNodes(p); // [수정됨] n값 계산
+
                 if (seg.owner === p) {
-                    spdRef.current[p].triggerBuff();
+                    // [수정됨] 아군 선분 전용 버프 트리거로 교체 및 n값 전달
+                    spdRef.current[p].triggerAllyLineBuff(currentNodes);
                 } else {
-                    spdRef.current[p].triggerDebuff();
+                    // [수정됨] n값 전달
+                    spdRef.current[p].triggerDebuff(currentNodes);
                 }
                 state.deactivateSegment(seg.id);
             }
@@ -132,7 +135,6 @@ export const useGameLoop = () => {
         if (phase === 'SETTING_PATH') {
             timer.current -= dt;
             if (timer.current <= 0) {
-                // Bug fix: Time's up -> Force generation of unready AI ways, mark all ready
                 const activePlayers: PlayerId[] = state.multiplayerActiveIds.length > 0
                     ? state.multiplayerActiveIds
                     : ['P1', ...(['P2', 'P3', 'P4'].slice(0, state.activeAIs))] as PlayerId[];
@@ -140,7 +142,6 @@ export const useGameLoop = () => {
                 activePlayers.forEach(p => {
                     if (!state.players[p].ready) {
                         if (p !== 'P1') {
-                            // AI Auto generation if they weren't triggered by Human P1
                             const aiPts = AIManager.generateWaypoints(
                                 state.aiModes[p],
                                 state.players[p].startPos,
@@ -153,9 +154,8 @@ export const useGameLoop = () => {
                         state.setReady(p, true);
                     }
                 });
-                startMoving(); // Force start visually and logically
+                startMoving(); 
             } else {
-                // Sync positions to start while setting path
                 ALL_PLAYERS.forEach(p => {
                     posRef.current[p] = { ...state.players[p].startPos };
                 });
@@ -172,37 +172,36 @@ export const useGameLoop = () => {
 
             const captureRadius = 0.5;
 
-            // Collect active players' speeds to find maximum potential distance
             const currentSpeeds: Record<PlayerId, number> = {} as any;
             activePlayers.forEach(p => {
                 spdRef.current[p].updateCombos(dt);
                 const ownedNodes = Object.values(state.nodes).filter(n => n.owner === p).length;
-                let maxOpponentNodes = 0;
+                
+                // [수정됨] m값: 나머지 모든 적군의 땅 갯수를 합산하도록 수정 (기획 의도 반영)
+                let totalOpponentNodes = 0;
                 activePlayers.forEach(opp => {
                     if (opp !== p) {
-                        const oppNodes = Object.values(state.nodes).filter(n => n.owner === opp).length;
-                        if (oppNodes > maxOpponentNodes) maxOpponentNodes = oppNodes;
+                        totalOpponentNodes += Object.values(state.nodes).filter(n => n.owner === opp).length;
                     }
                 });
 
+                // [수정됨] calculateCurrentSpeed 호출 시 n, m, r(state.round) 모두 전달
                 currentSpeeds[p] = spdRef.current[p].calculateCurrentSpeed(
                     ownedNodes,
-                    maxOpponentNodes,
+                    totalOpponentNodes,
+                    state.round,
                     state.players[p].failedLastRound && timer.current <= 1.0
                 );
             });
 
-            // Physics Sub-stepping
             const maxSpeed = Math.max(...activePlayers.map(p => currentSpeeds[p]));
             const maxDistThisFrame = maxSpeed * dt;
 
-            // Sub-step size: guarantees no entity moves more than captureRadius (0.5) in one step
             const STEP_SIZE = captureRadius * 0.8;
             const steps = Math.max(1, Math.ceil(maxDistThisFrame / STEP_SIZE));
             const stepDt = dt / steps;
 
             for (let s = 0; s < steps; s++) {
-                // Move players by stepDt
                 activePlayers.forEach(p => {
                     distRef.current[p] += currentSpeeds[p] * stepDt;
                     if (trajRef.current[p]) {
@@ -210,7 +209,6 @@ export const useGameLoop = () => {
                     }
                 });
 
-                // Check collisions at this sub-step
                 handleCollisions(activePlayers as string[]);
             }
 
