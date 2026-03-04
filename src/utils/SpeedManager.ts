@@ -81,10 +81,10 @@ export class SpeedManager {
         if (hasPenaltyTimeRemaining) origin *= 0.8; 
 
         // Vbase = Vorigin + n/10 + r/8
-        const vBase = origin + (n / 10) + (r / 8);
+        const vBase = origin + (n / 10) + (r / 4);
 
         // 각 콤보별 배율 계산
-        const buffMultiplier = Math.pow(1.1, this.buffCombo);                     // (1.1)^c
+        const buffMultiplier = Math.pow(1.15, this.buffCombo);                     // (1.15)^c
         const debuffBase = 0.7 + (n / 200);                                       
         const debuffMultiplier = Math.pow(debuffBase, this.debuffCombo);          // (0.7 + n/200)^d
         const allyLineMultiplier = Math.pow(1.1, this.allyLineCombo);            // (1.1)^f
@@ -94,7 +94,7 @@ export class SpeedManager {
 
         // 적군 강탈(e) 역전 보정 요소 적용
         if (m > n) {
-            const stealMultiplier = 1.05 * ((105 + (m - n)) / 100);
+            const stealMultiplier = 1.05 * ((1.1 + (m - n)) / 100);
             vCurrent *= Math.pow(stealMultiplier, this.stealCombo);
         } else {
             vCurrent *= Math.pow(1.05, this.stealCombo);
@@ -115,4 +115,5 @@ export class SpeedManager {
         this.debuffTimer = 0;
     }
 }
+
 
