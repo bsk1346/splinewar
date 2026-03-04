@@ -51,25 +51,26 @@ export class SplineTrajectory {
 export class SpeedManager {
     public buffCombo: number = 0;
     public stealCombo: number = 0;
+    public allyLineCombo: number = 0;
     public debuffCombo: number = 0;
 
     public buffTimer: number = 0;
     public stealTimer: number = 0;
+    public allyLineTimer: number = 0;
     public debuffTimer: number = 0;
 
     public updateCombos(dt: number) {
         if (this.buffTimer > 0) {
             this.buffTimer -= dt;
+            this.stealTimer -= dt;
+            this.allyLineTimer -= dt;
             if (this.buffTimer <= 0) {
                 this.buffCombo = 0;
-                this.buffTimer = 0;
-            }
-        }
-        if (this.stealTimer > 0) {
-            this.stealTimer -= dt;
-            if (this.stealTimer <= 0) {
                 this.stealCombo = 0;
+                this.allyLineCombo = 0;
+                this.buffTimer = 0;
                 this.stealTimer = 0;
+                this.allyLineTimer = 0;
             }
         }
         if (this.debuffTimer > 0) {
@@ -81,50 +82,69 @@ export class SpeedManager {
         }
     }
 
-    public triggerBuff() {
-        this.buffTimer = 0.8;
+    private renewPositiveTimers(n: number) {
+        const t = 0.8 + (n / 100);
+        this.buffTimer = t;
+        this.stealTimer = t;
+        this.allyLineTimer = t;
+    }
+
+    public triggerBuff(n: number) {
         this.buffCombo += 1;
+        this.renewPositiveTimers(n);
     }
 
-    public triggerStealBuff() {
-        this.stealTimer = 0.8;
+    public triggerStealBuff(n: number) {
         this.stealCombo += 1;
+        this.renewPositiveTimers(n);
     }
 
-    public triggerDebuff() {
-        this.debuffTimer = 0.8;
+    public triggerAllyLineBuff(n: number) {
+        this.allyLineCombo += 1;
+        this.renewPositiveTimers(n);
+    }
+
+    public triggerDebuff(n: number) {
         this.debuffCombo += 1;
+        this.debuffTimer = 0.8 + (n / 100);
     }
 
     public calculateCurrentSpeed(
         n: number,
         m: number,
+        r: number,
         hasPenaltyTimeRemaining: boolean
     ): number {
         let origin = 4;
         if (hasPenaltyTimeRemaining) origin *= 0.8;
 
-        const vBase = origin + (n / 5);
+        const vBase = origin + (n / 10) + (r / 4);
 
-        let vCurrent = vBase * Math.pow(1.2, this.buffCombo) * Math.pow(0.7, this.debuffCombo);
+        const buffMultiplier = Math.pow(1.15, this.buffCombo);
+        const debuffBase = 0.7 + (n / 200);
+        const debuffMultiplier = Math.pow(debuffBase, this.debuffCombo);
+        const allyLineMultiplier = Math.pow(1.1, this.allyLineCombo);
+
+        let vCurrent = vBase * buffMultiplier * debuffMultiplier * allyLineMultiplier;
 
         if (m > n) {
-            const multiplier = 1.1 * ((100 + (m - n)) / 100);
-            vCurrent *= Math.pow(multiplier, this.stealCombo);
+            const stealMultiplier = 1.05 * ((105 + (m - n)) / 100);
+            vCurrent *= Math.pow(stealMultiplier, this.stealCombo);
         } else {
-            vCurrent *= Math.pow(1.1, this.stealCombo);
+            vCurrent *= Math.pow(1.05, this.stealCombo);
         }
-
         return vCurrent;
     }
 
     public resetPhase() {
         this.buffCombo = 0;
         this.stealCombo = 0;
+        this.allyLineCombo = 0;
         this.debuffCombo = 0;
 
         this.buffTimer = 0;
         this.stealTimer = 0;
+        this.allyLineTimer = 0;
         this.debuffTimer = 0;
     }
 }
@@ -231,6 +251,14 @@ export class ServerGameLoop {
         const captureRadius = 0.5;
         const activeIds = this.getActiveIds();
 
+        const getOwnedNodes = (playerId: PlayerId) => {
+            let count = 0;
+            this.state.nodes.forEach(n => {
+                if (n.owner === playerId) count++;
+            });
+            return count;
+        };
+
         // Node Capture
         this.state.nodes.forEach((node, nodeId) => {
             if (node.capturedThisRound || node.isBase) return;
@@ -256,10 +284,11 @@ export class ServerGameLoop {
                     node.capturedThisRound = true;
                     this.nodesArrayThisRound[p].push(node);
 
+                    const currentNodes = getOwnedNodes(p);
                     if (oldOwner !== "" && oldOwner !== p) {
-                        this.spdRef[p].triggerStealBuff();
+                        this.spdRef[p].triggerStealBuff(currentNodes);
                     } else if (oldOwner !== p) {
-                        this.spdRef[p].triggerBuff();
+                        this.spdRef[p].triggerBuff(currentNodes);
                     }
                 }
             }
@@ -284,10 +313,11 @@ export class ServerGameLoop {
                 // Ignore
             } else if (hitters.length === 1) {
                 const p = hitters[0];
+                const currentNodes = getOwnedNodes(p);
                 if (seg.owner === p) {
-                    this.spdRef[p].triggerBuff();
+                    this.spdRef[p].triggerAllyLineBuff(currentNodes);
                 } else {
-                    this.spdRef[p].triggerDebuff();
+                    this.spdRef[p].triggerDebuff(currentNodes);
                 }
                 seg.active = false;
             }
@@ -316,21 +346,20 @@ export class ServerGameLoop {
                     if (n.owner === p) ownedNodes++;
                 });
 
-                let maxOpponentNodes = 0;
+                let totalOpponentNodes = 0;
                 activeIds.forEach(opp => {
                     if (opp !== p) {
-                        let oppNodes = 0;
                         this.state.nodes.forEach(n => {
-                            if (n.owner === opp) oppNodes++;
+                            if (n.owner === opp) totalOpponentNodes++;
                         });
-                        if (oppNodes > maxOpponentNodes) maxOpponentNodes = oppNodes;
                     }
                 });
 
                 // Not syncing `failedLastRound` strictly to schema for now since it mostly affects speed visually
                 const speed = this.spdRef[p].calculateCurrentSpeed(
                     ownedNodes,
-                    maxOpponentNodes,
+                    totalOpponentNodes,
+                    this.state.round,
                     false
                 );
 
