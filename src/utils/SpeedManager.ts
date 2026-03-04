@@ -94,7 +94,7 @@ export class SpeedManager {
 
         // 적군 강탈(e) 역전 보정 요소 적용
         if (m > n) {
-            const stealMultiplier = 1.05 * ((1.1 + (m - n)) / 100);
+            const stealMultiplier = 1.05 * ((110 + (m - n)) / 100);
             vCurrent *= Math.pow(stealMultiplier, this.stealCombo);
         } else {
             vCurrent *= Math.pow(1.05, this.stealCombo);
@@ -115,5 +115,6 @@ export class SpeedManager {
         this.debuffTimer = 0;
     }
 }
+
 
 
