@@ -170,7 +170,9 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             // Distance Check - Path Building (Hexagonal Adjacent Check)
             const d = Math.hypot((nearestNode as NodeData).pos.x - lastNodePos.x, (nearestNode as NodeData).pos.y - lastNodePos.y);
 
-            if (d <= 4.0) {
+            // 노드 간의 물리적 거리는 5.0입니다. 따라서 인접 노드 선택을 위해 6.0 이하로 설정합니다.
+            // (동일한 노드를 중복으로 찍는 것을 방지하기 위해 d > 0.1 조건 추가)
+            if (d > 0.1 && d <= 6.0) {
                 state.setWaypoints(myPlayerId, [...myWp, (nearestNode as NodeData).pos]);
             }
         }
