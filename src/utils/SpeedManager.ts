@@ -87,14 +87,14 @@ export class SpeedManager {
         const buffMultiplier = Math.pow(1.1, this.buffCombo);                     // (1.1)^c
         const debuffBase = 0.7 + (n / 200);                                       
         const debuffMultiplier = Math.pow(debuffBase, this.debuffCombo);          // (0.7 + n/200)^d
-        const allyLineMultiplier = Math.pow(1.15, this.allyLineCombo);            // (1.15)^f
+        const allyLineMultiplier = Math.pow(1.1, this.allyLineCombo);            // (1.1)^f
 
         // 긍정적/부정적 요소를 모두 곱함
         let vCurrent = vBase * buffMultiplier * debuffMultiplier * allyLineMultiplier;
 
         // 적군 강탈(e) 역전 보정 요소 적용
         if (m > n) {
-            const stealMultiplier = 1.05 * ((100 + (m - n)) / 100);
+            const stealMultiplier = 1.05 * ((105 + (m - n)) / 100);
             vCurrent *= Math.pow(stealMultiplier, this.stealCombo);
         } else {
             vCurrent *= Math.pow(1.05, this.stealCombo);
@@ -115,3 +115,4 @@ export class SpeedManager {
         this.debuffTimer = 0;
     }
 }
+
