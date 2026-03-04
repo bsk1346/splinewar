@@ -145,7 +145,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
         const logicalY = (yCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
 
         let nearestNode: NodeData | null = null;
-        let minDist = 3.0; // Increased snapping max distance for mobile touch ease
+        let minDist = 6.0; // Increased snapping max distance to allow diagonals (grid diag dist is 5.0)
 
         Object.values(state.nodes).forEach(node => {
             const d = Math.hypot(node.pos.x - logicalX, node.pos.y - logicalY);
