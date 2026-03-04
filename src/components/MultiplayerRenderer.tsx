@@ -156,14 +156,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
         });
 
         const myWp = state.players[myPlayerId].waypoints;
-
-        let startPos = { x: 0, y: 0 };
-        room.state.players.forEach((p, sId) => {
-            if (sId === room.sessionId) {
-                startPos = { x: p.startPos.x, y: p.startPos.y };
-            }
-        });
-
+        const startPos = state.players[myPlayerId].startPos;
         const lastNodePos = myWp.length > 0 ? myWp[myWp.length - 1] : startPos;
 
         if (nearestNode) {
