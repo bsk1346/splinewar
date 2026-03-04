@@ -1,14 +1,16 @@
 import { type PlayerId, type NodeData, type LineSegment } from '../store/useGameState';
 
+export type AIMode = 'RANDOM' | 'GREEDY' | 'AGGRESSIVE' | 'TRAJECTORY';
+
 interface Vector2 { x: number, y: number }
 
 export class AIManager {
     private static getUnownedNodes(nodes: Record<string, NodeData>): NodeData[] {
-        return Object.values(nodes).filter(n => (!n.owner || n.owner === "") && !n.isBase);
+        return Object.values(nodes).filter(n => (!n.owner || (n.owner as string) === "") && !n.isBase);
     }
 
     private static getOpponentNodes(nodes: Record<string, NodeData>, myId: PlayerId): NodeData[] {
-        return Object.values(nodes).filter(n => n.owner && n.owner !== "" && n.owner !== myId && !n.isBase);
+        return Object.values(nodes).filter(n => n.owner && (n.owner as string) !== "" && n.owner !== myId && !n.isBase);
     }
 
     private static doLinesIntersect(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2): boolean {
@@ -21,9 +23,14 @@ export class AIManager {
         startPos: Vector2,
         nodes: Record<string, NodeData>,
         segments: LineSegment[],
+        // currentWaypoints is passed but not used recursively here, kept for signature consistency
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         currentWaypoints: Vector2[],
         playerId: PlayerId
     ): Vector2[] {
+        // Prevent strict mode tsc TS6133 unused parameter error
+        if (currentWaypoints) { /* no-op */ }
+
         if (mode === 'GREEDY' || mode === 'AGGRESSIVE') {
             return this.generateGreedy(startPos, nodes, playerId);
         } else if (mode === 'TRAJECTORY') {
