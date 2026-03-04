@@ -12,7 +12,6 @@ export class AIManager {
         _p1NodesLastRound: NodeData[], // Unused, we look at actual P1 ownership
         playerId: PlayerId = 'P2'
     ): Vector2[] {
-        // [수정됨] 모든 AI 생성 함수에 playerId를 넘겨주어 '나'를 기준으로 적을 식별하게 함
         switch (mode) {
             case 'RANDOM':
                 return this.generateRandom(startPos, nodes, playerId);
@@ -21,7 +20,8 @@ export class AIManager {
             case 'AGGRESSIVE':
                 return this.generateAggressive(startPos, nodes, segments, playerId);
             case 'TRAJECTORY':
-                return this.generateTrajectory(startPos, nodes, playerId);
+                // [수정됨] 선분 충돌 판별을 위해 segments를 넘겨줍니다.
+                return this.generateTrajectory(startPos, nodes, segments, playerId);
             default:
                 return [];
         }
@@ -31,23 +31,26 @@ export class AIManager {
         return Object.values(nodes).filter(n => !n.isBase && n.owner === null);
     }
 
-    // [추가됨] 목표 1 & 2를 위해 '나(playerId)'를 제외한 모든 적군의 점령지를 찾는 헬퍼 함수
     private static getOpponentNodes(nodes: Record<string, NodeData>, playerId: PlayerId): NodeData[] {
         return Object.values(nodes).filter(n => !n.isBase && n.owner !== null && n.owner !== playerId);
+    }
+
+    // [추가됨] 목표 1을 위한 선분 교차(Intersection) 판별 수학 헬퍼 함수
+    private static doLinesIntersect(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2): boolean {
+        const ccw = (A: Vector2, B: Vector2, C: Vector2) => (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+        return ccw(p1, p3, p4) !== ccw(p2, p3, p4) && ccw(p1, p2, p3) !== ccw(p1, p2, p4);
     }
 
     // MODE A: Random
     private static generateRandom(startPos: Vector2, nodes: Record<string, NodeData>, playerId: PlayerId): Vector2[] {
         let available = this.getUnownedNodes(nodes);
-        // [수정됨] 목표 2: 중립지가 없으면 적군의 땅을 타겟으로 전환
         if (available.length === 0) available = this.getOpponentNodes(nodes, playerId);
-        if (available.length === 0) return []; // 먹을 땅이 아예 없으면 정지
+        if (available.length === 0) return [];
 
-        // Pick 1 to 9 random nodes, somewhat close (distance < 30)
         const nearby = available.filter(n => Math.hypot(n.pos.x - startPos.x, n.pos.y - startPos.y) < 30);
         const pool = nearby.length > 0 ? nearby : available;
 
-        const count = Math.floor(Math.random() * 9) + 4; // 3배 늘린 4~12 범위
+        const count = Math.floor(Math.random() * 9) + 4; 
         const waypoints: Vector2[] = [];
 
         for (let i = 0; i < count; i++) {
@@ -59,16 +62,18 @@ export class AIManager {
         return waypoints;
     }
 
-    // MODE B: Greedy Heuristic (Closest unowned repeatedly)
+    // MODE B: Greedy Heuristic
     private static generateGreedy(startPos: Vector2, nodes: Record<string, NodeData>, playerId: PlayerId): Vector2[] {
         let available = this.getUnownedNodes(nodes);
-        // [수정됨] 목표 2: 중립지가 없으면 적군의 땅을 타겟으로 전환
         if (available.length === 0) available = this.getOpponentNodes(nodes, playerId);
         if (available.length === 0) return [];
 
         const waypoints: Vector2[] = [];
         let current = startPos;
-        const count = 9; // 3배 (3 -> 9)
+        
+        // [수정됨] 목표 2: 점령지 5개당 3개의 웨이포인트 추가 (Trajectory와 동일한 공식)
+        const ownedCount = Object.values(nodes).filter(n => n.owner === playerId).length;
+        const count = 9 + Math.floor(ownedCount / 5) * 3;
 
         for (let i = 0; i < count; i++) {
             if (available.length === 0) break;
@@ -84,41 +89,42 @@ export class AIManager {
         return waypoints;
     }
 
-    // MODE C: Aggressive (Targets any opponent's owned nodes directly to pillage them)
+    // MODE C: Aggressive
     private static generateAggressive(
         startPos: Vector2,
         nodes: Record<string, NodeData>,
         _segments: LineSegment[],
-        playerId: PlayerId // [수정됨] 안 쓰는 파라미터 지우고 playerId 받음
+        playerId: PlayerId
     ): Vector2[] {
         const waypoints: Vector2[] = [];
         let current = startPos;
-        const count = 9; // 3배 확장
-
-        // [수정됨] 목표 1: P1뿐만 아니라 모든 적군을 타겟으로 삼음
+        
+        // [수정됨] 목표 3: (m - n) 값이 5씩 커질수록 2개의 웨이포인트 추가
+        const n = Object.values(nodes).filter(node => node.owner === playerId).length;
         const opponentOwned = this.getOpponentNodes(nodes, playerId);
+        const m = opponentOwned.length;
+        const diff = Math.max(0, m - n); // 지고 있을 때(m이 n보다 클 때)만 격차 인정
+        const count = 9 + Math.floor(diff / 5) * 2;
+
         const unowned = this.getUnownedNodes(nodes);
 
         for (let i = 0; i < count; i++) {
-            // Find closest opponent node
             let bestTarget: NodeData | null = null;
             let minDistToTarget = Infinity;
 
-            for (const n of opponentOwned) {
-                const d = Math.hypot(n.pos.x - current.x, n.pos.y - current.y);
+            for (const node of opponentOwned) {
+                const d = Math.hypot(node.pos.x - current.x, node.pos.y - current.y);
                 if (d < minDistToTarget) {
                     minDistToTarget = d;
-                    bestTarget = n;
+                    bestTarget = node;
                 }
             }
 
-            // 적의 땅이 존재하고, 거리가 너무 멀지 않다면 직접 타격
             if (bestTarget && minDistToTarget < 25) {
                 waypoints.push(bestTarget.pos);
                 current = bestTarget.pos;
                 opponentOwned.splice(opponentOwned.indexOf(bestTarget), 1);
             } else if (unowned.length > 0) {
-                // 거리가 멀면 가장 가까운 중립지 경유 (징검다리)
                 let nearestUnowned: NodeData | null = null;
                 let minU = Infinity;
                 for (let j = 0; j < unowned.length; j++) {
@@ -135,7 +141,6 @@ export class AIManager {
                     unowned.splice(unowned.indexOf(nearestUnowned), 1);
                 }
             } else if (opponentOwned.length > 0) {
-                // [수정됨] 목표 2: 중립지마저 없다면, 거리가 25 이상으로 멀더라도 가장 가까운 적의 땅을 징검다리로 밟고 감
                 let nearestOpp: NodeData | null = null;
                 let minO = Infinity;
                 for (let j = 0; j < opponentOwned.length; j++) {
@@ -158,10 +163,14 @@ export class AIManager {
         return waypoints;
     }
 
-    // MODE D: Trajectory (Reactive Snake Routing)
-    private static generateTrajectory(startPos: Vector2, nodes: Record<string, NodeData>, playerId: PlayerId): Vector2[] {
+    // MODE D: Trajectory (Reactive Snake Routing with Segment Avoidance/Preference)
+    private static generateTrajectory(
+        startPos: Vector2, 
+        nodes: Record<string, NodeData>, 
+        segments: LineSegment[], // [수정됨] 선분 매개변수 추가
+        playerId: PlayerId
+    ): Vector2[] {
         let availableNodes = this.getUnownedNodes(nodes);
-        // [수정됨] 목표 2: 중립지가 없으면 적군의 땅을 타겟으로 전환
         if (availableNodes.length === 0) availableNodes = this.getOpponentNodes(nodes, playerId);
         if (availableNodes.length === 0) return [];
 
@@ -176,13 +185,31 @@ export class AIManager {
             if (availableNodes.length === 0) break;
 
             let nearestIdx = -1;
-            let minDist = Infinity;
+            // [수정됨] 단순 거리가 아닌 가중치 점수(가장 낮은 값이 최적)를 사용
+            let minScore = Infinity; 
 
             for (let j = 0; j < availableNodes.length; j++) {
                 const node = availableNodes[j];
                 const d = Math.hypot(node.pos.x - currentPos.x, node.pos.y - currentPos.y);
-                if (d < minDist) {
-                    minDist = d;
+                
+                // 기본 점수는 물리적 거리
+                let score = d;
+
+                // [수정됨] 목표 1: 경로(currentPos -> node.pos)상에 활성화된 선분이 있는지 체크
+                segments.forEach(seg => {
+                    if (!seg.active) return;
+                    
+                    if (this.doLinesIntersect(currentPos, node.pos, seg.p1, seg.p2)) {
+                        if (seg.owner === playerId) {
+                            score -= 15; // 아군 선분 교차 시: 점수 차감 (더 가깝게, 선호하게 느낌)
+                        } else {
+                            score += 30; // 적군 선분 교차 시: 점수 가산 (더 멀게, 피하게 느낌)
+                        }
+                    }
+                });
+
+                if (score < minScore) {
+                    minScore = score;
                     nearestIdx = j;
                 }
             }
