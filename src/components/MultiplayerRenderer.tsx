@@ -155,8 +155,12 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             }
         });
 
-        const myWp = state.players[myPlayerId].waypoints;
-        const startPos = state.players[myPlayerId].startPos;
+        // Ensure the player state exists locally before destructuring
+        const myPlayerState = state.players[myPlayerId];
+        if (!myPlayerState) return;
+
+        const myWp = myPlayerState.waypoints || [];
+        const startPos = myPlayerState.startPos || { x: 0, y: 0 };
         const lastNodePos = myWp.length > 0 ? myWp[myWp.length - 1] : startPos;
 
         if (nearestNode) {
