@@ -43,7 +43,6 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
 
         room.onStateChange((s) => {
             setRound(s.round);
-            setTimerDisplay(s.phase === 'SETTING_PATH' ? s.timer : 0);
 
             const me = s.players.get(room.sessionId);
             if (me) {
@@ -105,6 +104,18 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             useGameState.getState().setMultiplayerActiveIds(activeIds);
         });
 
+        // Add specific listener for timer as it changes rapidly
+        room.state.listen("timer", (currentTimer) => {
+            setTimerDisplay(room.state.phase === 'SETTING_PATH' ? currentTimer : 0);
+        });
+
+        // Add specific listener for phase to reset timer accordingly
+        room.state.listen("phase", (currentPhase) => {
+            if (currentPhase === 'MOVING') {
+                setTimerDisplay(0);
+            }
+        });
+
         const handleUnload = () => {
             if (room) {
                 try { room.leave(); } catch (e) { }
@@ -145,7 +156,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
         const logicalY = (yCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
 
         let nearestNode: NodeData | null = null;
-        let minDist = 6.0; // Increased snapping max distance to allow diagonals (grid diag dist is 5.0)
+        let minDist = 3.0; // Increased snapping max distance for mobile touch ease
 
         Object.values(state.nodes).forEach(node => {
             const d = Math.hypot(node.pos.x - logicalX, node.pos.y - logicalY);
@@ -155,20 +166,22 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             }
         });
 
-        // Ensure the player state exists locally before destructuring
-        const myPlayerState = state.players[myPlayerId];
-        if (!myPlayerState) return;
+        const myWp = state.players[myPlayerId].waypoints;
 
-        const myWp = myPlayerState.waypoints || [];
-        const startPos = myPlayerState.startPos || { x: 0, y: 0 };
+        let startPos = { x: 0, y: 0 };
+        room.state.players.forEach((p, sId) => {
+            if (sId === room.sessionId) {
+                startPos = { x: p.startPos.x, y: p.startPos.y };
+            }
+        });
+
         const lastNodePos = myWp.length > 0 ? myWp[myWp.length - 1] : startPos;
 
         if (nearestNode) {
             // Distance Check - Path Building (Hexagonal Adjacent Check)
             const d = Math.hypot((nearestNode as NodeData).pos.x - lastNodePos.x, (nearestNode as NodeData).pos.y - lastNodePos.y);
 
-            // (동일한 노드를 중복으로 찍는 것을 방지하기 위해 d > 0.1 조건 추가)
-            if (d > 0.1) {
+            if (d <= 4.0) {
                 state.setWaypoints(myPlayerId, [...myWp, (nearestNode as NodeData).pos]);
             }
         }
