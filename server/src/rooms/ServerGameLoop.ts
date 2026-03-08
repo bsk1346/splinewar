@@ -195,6 +195,15 @@ export class ServerGameLoop {
         return ids;
     }
 
+    /** Find a player schema by PlayerId (P1/P2/...) since MapSchema key is sessionId */
+    private findPlayerById(pid: PlayerId): any | null {
+        let found: any = null;
+        this.state.players.forEach((p: any) => {
+            if (p.id === pid) found = p;
+        });
+        return found;
+    }
+
     public startMoving() {
         const activeIds = this.getActiveIds();
 
@@ -354,7 +363,7 @@ export class ServerGameLoop {
 
         // Sync schema pos for network interpolation
         activeIds.forEach(p => {
-            const playerSchema = this.state.players.get(p);
+            const playerSchema = this.findPlayerById(p);
             if (playerSchema) {
                 playerSchema.currentPos.x = this.posRef[p].x;
                 playerSchema.currentPos.y = this.posRef[p].y;
@@ -401,12 +410,14 @@ export class ServerGameLoop {
             n.capturedThisRound = false;
         });
 
-        // Reset players startPos
+        // Reset players startPos to their final position, clear waypoints for next round
         activeIds.forEach(p => {
-            const playerSchema = this.state.players.get(p);
+            const playerSchema = this.findPlayerById(p);
             if (playerSchema) {
                 playerSchema.startPos.x = this.posRef[p].x;
                 playerSchema.startPos.y = this.posRef[p].y;
+                playerSchema.currentPos.x = this.posRef[p].x;
+                playerSchema.currentPos.y = this.posRef[p].y;
                 playerSchema.waypoints.clear();
                 playerSchema.ready = false;
             }
