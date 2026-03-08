@@ -11,42 +11,72 @@ export interface Vector2 {
 }
 
 export class SplineTrajectory {
-    points: Vector2[];
-    distances: number[];
-    totalLength: number;
+    private points: Vector2[];
+    private lut: { t: number; distance: number }[] = [];
+    public totalLength: number = 0;
 
-    constructor(points: Vector2[]) {
-        this.points = points;
-        this.distances = [0];
-        let len = 0;
-
-        for (let i = 1; i < points.length; i++) {
-            const d = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-            len += d;
-            this.distances.push(len);
+    constructor(waypoints: Vector2[]) {
+        if (waypoints.length < 2) {
+            this.points = waypoints.map(p => ({ ...p }));
+            return;
         }
-        this.totalLength = len;
+        this.points = [waypoints[0], ...waypoints, waypoints[waypoints.length - 1]];
+        this.buildLUT();
     }
 
-    getPointAtDistance(d: number): Vector2 {
-        if (d <= 0) return { ...this.points[0] };
-        if (d >= this.totalLength) return { ...this.points[this.points.length - 1] };
-
-        for (let i = 1; i < this.distances.length; i++) {
-            if (d <= this.distances[i]) {
-                const segLen = this.distances[i] - this.distances[i - 1];
-                const t = segLen === 0 ? 0 : (d - this.distances[i - 1]) / segLen;
-                const p1 = this.points[i - 1];
-                const p2 = this.points[i];
-                return {
-                    x: p1.x + (p2.x - p1.x) * t,
-                    y: p1.y + (p2.y - p1.y) * t
-                };
-            }
+    private getRawSplinePoint(tTotal: number): Vector2 {
+        if (this.points.length < 4) {
+            return this.points[1] || this.points[0] || { x: 0, y: 0 };
         }
-        return { ...this.points[this.points.length - 1] };
+        const maxSegments = this.points.length - 3;
+        let segment = Math.floor(tTotal);
+        let t = tTotal - segment;
+        if (segment >= maxSegments) { segment = maxSegments - 1; t = 1; }
+        if (segment < 0) { segment = 0; t = 0; }
+        const p0 = this.points[segment], p1 = this.points[segment + 1];
+        const p2 = this.points[segment + 2], p3 = this.points[segment + 3];
+        const t2 = t * t, t3 = t2 * t;
+        return {
+            x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+            y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+        };
+    }
+
+    private buildLUT(samplesPerSegment: number = 100) {
+        if (this.points.length < 4) return;
+        const maxSegments = this.points.length - 3;
+        const totalSamples = maxSegments * samplesPerSegment;
+        this.lut.push({ t: 0, distance: 0 });
+        let accDist = 0, prev = this.getRawSplinePoint(0);
+        for (let i = 1; i <= totalSamples; i++) {
+            const tTotal = (i / totalSamples) * maxSegments;
+            const curr = this.getRawSplinePoint(tTotal);
+            accDist += Math.hypot(curr.x - prev.x, curr.y - prev.y);
+            this.lut.push({ t: tTotal, distance: accDist });
+            prev = curr;
+        }
+        this.totalLength = accDist;
+    }
+
+    public getPointAtDistance(d: number): Vector2 {
+        if (this.points.length < 4) {
+            return this.points[1] || this.points[0] || { x: 0, y: 0 };
+        }
+        if (d <= 0) return this.getRawSplinePoint(0);
+        if (d >= this.totalLength) return this.getRawSplinePoint(this.points.length - 3);
+        let low = 0, high = this.lut.length - 1;
+        while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            if (this.lut[mid].distance < d) low = mid + 1; else high = mid - 1;
+        }
+        const idx = Math.max(0, Math.min(high, this.lut.length - 2));
+        const t0 = this.lut[idx].t, t1 = this.lut[idx + 1].t;
+        const d0 = this.lut[idx].distance, d1 = this.lut[idx + 1].distance;
+        const iT = d1 > d0 ? t0 + ((d - d0) / (d1 - d0)) * (t1 - t0) : t0;
+        return this.getRawSplinePoint(iT);
     }
 }
+
 
 export class SpeedManager {
     public buffCombo: number = 0;

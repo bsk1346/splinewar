@@ -89,7 +89,13 @@ export const SharedCanvas: React.FC<SharedCanvasProps> = ({
                     if (p.connected) {
                         const pid = p.id as PlayerId;
                         renderActivePlayers.push(pid);
-                        renderPos[pid] = { x: p.currentPos.x, y: p.currentPos.y };
+                        // During MOVING, use client-side interpolated posRef for smooth rendering.
+                        // During SETTING_PATH, use server's authoritative currentPos.
+                        if (phase === 'MOVING' && refs.posRef.current[pid]) {
+                            renderPos[pid] = { ...refs.posRef.current[pid] };
+                        } else {
+                            renderPos[pid] = { x: p.currentPos.x, y: p.currentPos.y };
+                        }
                         renderStartPos[pid] = { x: p.startPos.x, y: p.startPos.y };
                         if (pid === myPlayerId) {
                             if (phase === 'SETTING_PATH') {

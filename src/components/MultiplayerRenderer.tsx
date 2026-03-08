@@ -20,15 +20,32 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
 
     const isMovingRef = useRef(false);
 
-    // Using dummy refs for SharedCanvas since it expects the useGameLoop format
-    // In multiplayer, SharedCanvas will fetch real-time state from `room.state` directly.
-    const dummyRefs = useRef({
-        spdRef: { P1: null, P2: null, P3: null, P4: null },
-        posRef: { current: { P1: { x: 0, y: 0 }, P2: { x: 0, y: 0 }, P3: { x: 0, y: 0 }, P4: { x: 0, y: 0 } } },
+    // posRef holds client-side interpolated positions for smooth rendering during MOVING.
+    // SharedCanvas reads posRef during MOVING phase (see SharedCanvas.tsx renderPos logic).
+    const refsForCanvas = useRef({
+        spdRef: { P1: null as any, P2: null as any, P3: null as any, P4: null as any },
+        posRef: { current: { P1: { x: 0, y: 0 }, P2: { x: 0, y: 0 }, P3: { x: 0, y: 0 }, P4: { x: 0, y: 0 } } as Record<PlayerId, { x: number, y: number }> },
         distRef: { current: { P1: 0, P2: 0, P3: 0, P4: 0 } },
         trajRef: { current: { P1: null, P2: null, P3: null, P4: null } },
         timer: { current: 0 }
     });
+
+    // Interpolation step: called every RAF frame by SharedCanvas.
+    // Smoothly lerps client posRef toward the latest server currentPos.
+    const interpStep = (dt: number) => {
+        if (!isMovingRef.current) return;
+        room.state.players.forEach((p: any) => {
+            if (!p.connected) return;
+            const pid = p.id as PlayerId;
+            const target = { x: p.currentPos.x, y: p.currentPos.y };
+            const curr = refsForCanvas.current.posRef.current[pid];
+            if (!curr) return;
+            // lerp factor: higher = faster catch-up (15 ≈ ~67ms to close gap at 60fps)
+            const alpha = Math.min(1, dt * 15);
+            curr.x += (target.x - curr.x) * alpha;
+            curr.y += (target.y - curr.y) * alpha;
+        });
+    };
 
     useEffect(() => {
         const state = useGameState.getState();
@@ -72,18 +89,25 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
                 setPhase('MOVING');
                 isMovingRef.current = true;
                 useGameState.getState().setPhase('MOVING');
+                // Seed interpolated positions from server's current values
                 room.state.players.forEach((p: any) => {
                     if (!p.connected) return;
+                    const pid = p.id as PlayerId;
+                    refsForCanvas.current.posRef.current[pid] = { x: p.currentPos.x, y: p.currentPos.y };
                     const mappedWP = Array.from(p.waypoints as any[]).filter((w: any) => w).map((w: any) => ({ x: w.x, y: w.y }));
-                    useGameState.getState().setWaypoints(p.id as PlayerId, mappedWP);
+                    useGameState.getState().setWaypoints(pid, mappedWP);
                 });
             } else if (currentPhase === 'SETTING_PATH') {
                 setTimerDisplay(room.state.timer);
-                if (isMovingRef.current) {
-                    isMovingRef.current = false;
-                    setPhase('SETTING_PATH');
-                    setZoom(1);
-                }
+                isMovingRef.current = false;
+                setPhase('SETTING_PATH');
+                setZoom(1);
+                // Clear local waypoints and segments so previous round data doesn't accumulate
+                const gs = useGameState.getState();
+                const myId = room.state.players.get(room.sessionId)?.id as PlayerId | undefined;
+                if (myId) gs.setWaypoints(myId, []);
+                // Reset Zustand node capture flags mirrored from server
+                gs.setPhase('SETTING_PATH');
             } else if (currentPhase === 'FINISHED') {
                 setPhase('FINISHED');
                 isMovingRef.current = false;
@@ -196,8 +220,8 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             <h3 style={{ margin: '5px 0' }}>Round: {round > 7 ? 'Game Over' : `${round}/7`} | Phase: {phase} | {phase === 'FINISHED' ? '🏁 Game Over' : (isReady ? '🟢 Ready (Waiting)' : '🔴 Selecting Path')}</h3>
 
             <SharedCanvas
-                step={() => { }} // Dummy step, unused in multiplayer
-                refs={dummyRefs.current}
+                step={interpStep} // Lerp posRef toward server currentPos each frame for smooth motion
+                refs={refsForCanvas.current}
                 phase={phase}
                 isMultiplayer={true}
                 roomState={room.state} // Pass the room state for rendering

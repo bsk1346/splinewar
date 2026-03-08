@@ -68,6 +68,7 @@ export class GameRoom extends Room<GameState> {
 
         this.displayRoomName = options.roomName || `Room ${this.roomId}`;
         this.setMetadata({ roomName: this.displayRoomName, active: true });
+        this.setPatchRate(30); // Match tick rate (30ms) to reduce choppy position updates
 
         this.onMessage("submitWaypoints", (client, message: { waypoints: { x: number, y: number }[] }) => {
             const playerPath = this.state.players.get(client.sessionId);
