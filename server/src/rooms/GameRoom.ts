@@ -25,6 +25,7 @@ export class GameRoom extends Room<GameState> {
     private hiddenWaypoints = new Map<string, { x: number, y: number }[]>();
     private disconnectedTimeout = new Map<string, NodeJS.Timeout>();
     private gameLoop!: ServerGameLoop;
+    private isStartingMovingPhase: boolean = false; // guard against double forceStartMovingPhase calls
     private displayRoomName: string = "";
 
     onCreate(options: any) {
@@ -284,11 +285,12 @@ export class GameRoom extends Room<GameState> {
             p.waypoints.clear();
         });
 
+        this.isStartingMovingPhase = false;
         clearInterval(this.timerInterval);
         this.timerInterval = setInterval(() => {
             this.state.timer = Math.round((this.state.timer - 0.1) * 10) / 10;
-            if (this.state.timer <= 0) {
-                // Force sync and move
+            if (this.state.timer <= 0 && !this.isStartingMovingPhase) {
+                this.isStartingMovingPhase = true; // prevent double-call from queued callbacks
                 this.forceStartMovingPhase();
             }
         }, 100);

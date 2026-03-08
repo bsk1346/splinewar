@@ -50,53 +50,8 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
                 if (myPlayerId !== me.id) setMyPlayerId(me.id as PlayerId);
             }
 
-            if (s.phase === 'MOVING' && !isMovingRef.current) {
-                isMovingRef.current = true;
-                setPhase('MOVING');
-
-                useGameState.getState().setPhase('MOVING');
-
-                s.players.forEach(p => {
-                    if (!p.connected) return;
-                    const mappedWP = Array.from(p.waypoints).filter(w => w).map(w => ({ x: w!.x, y: w!.y }));
-                    useGameState.getState().setWaypoints(p.id as PlayerId, mappedWP);
-                });
-                // Note: local startMoving is NO LONGER CALLED. Server handles it.
-            }
-
-            if (s.phase === 'SETTING_PATH' && isMovingRef.current) {
-                isMovingRef.current = false;
-                setPhase('SETTING_PATH');
-                setZoom(1);
-
-                const amIHost = s.hostSessionId === room.sessionId;
-
-                if (amIHost) {
-                    const activeArr = Array.from(s.players.values());
-                    activeArr.forEach(p => {
-                        if (!p.connected && !p.ready) {
-                            const modes: ('GREEDY' | 'AGGRESSIVE' | 'TRAJECTORY')[] = ['GREEDY', 'AGGRESSIVE', 'TRAJECTORY'];
-                            const randomMode = modes[Math.floor(Math.random() * modes.length)];
-
-                            const aiPts = AIManager.generateWaypoints(
-                                randomMode,
-                                { x: p.startPos.x, y: p.startPos.y },
-                                useGameState.getState().nodes,
-                                useGameState.getState().segments,
-                                [], p.id as PlayerId
-                            );
-
-                            room.send("submitAgentWaypoints", { targetId: p.id, waypoints: aiPts });
-                        }
-                    });
-                }
-            }
-
-            if (s.phase === 'FINISHED') {
-                setPhase('FINISHED');
-                isMovingRef.current = false;
-            }
-
+            // Phase transitions are handled by room.state.listen("phase") below.
+            // Only sync round and active IDs here.
             let activeIds: PlayerId[] = [];
             s.players.forEach(p => {
                 if (p.connected) activeIds.push(p.id as PlayerId);
@@ -106,7 +61,10 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
 
         // Dedicated high-frequency listeners for timer and phase
         room.state.listen("timer", (currentTimer: number) => {
-            setTimerDisplay(room.state.phase === 'SETTING_PATH' ? currentTimer : room.state.timer);
+            // Only show the countdown timer during path-setting; hide it during movement
+            if (room.state.phase === 'SETTING_PATH') {
+                setTimerDisplay(currentTimer);
+            }
         });
 
         room.state.listen("phase", (currentPhase: string) => {
