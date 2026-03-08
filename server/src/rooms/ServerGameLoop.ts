@@ -202,13 +202,18 @@ export class ServerGameLoop {
         this.nodesArrayThisRound = { P1: [], P2: [], P3: [], P4: [] };
 
         activeIds.forEach(pid => {
-            const playerSchema = this.state.players.get(pid);
+            // MapSchema is keyed by sessionId, NOT by PlayerId (P1/P2/etc.)
+            // So we must iterate all players and find the one matching this pid
+            let playerSchema: any = null;
+            this.state.players.forEach((p: any) => {
+                if (p.id === pid) playerSchema = p;
+            });
             if (!playerSchema) return;
 
             // Use currentPos (where player actually is) not startPos (fixed base corner)
             const origin: Vector2 = { x: playerSchema.currentPos.x, y: playerSchema.currentPos.y };
             const wps: Vector2[] = [origin];
-            playerSchema.waypoints.forEach(wp => wps.push({ x: wp.x, y: wp.y }));
+            playerSchema.waypoints.forEach((wp: any) => wps.push({ x: wp.x, y: wp.y }));
 
             if (wps.length < 2) wps.push({ ...wps[0] });
 
