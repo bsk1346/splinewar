@@ -145,7 +145,7 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
         const logicalY = (yCanvasPixel - CANVAS_SIZE / 2) / MULTIPLIER;
 
         let nearestNode: NodeData | null = null;
-        let minDist = 6.0; // Snapping radius: must be >= max node distance (~5.0 for diagonals)
+        let minDist = 3.0; // Increased snapping max distance for mobile touch ease
 
         Object.values(state.nodes).forEach(node => {
             const d = Math.hypot(node.pos.x - logicalX, node.pos.y - logicalY);
@@ -167,10 +167,10 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
         const lastNodePos = myWp.length > 0 ? myWp[myWp.length - 1] : startPos;
 
         if (nearestNode) {
-            // No adjacency restriction - any node can be selected freely (same as singleplayer)
+            // Distance Check - Path Building (Hexagonal Adjacent Check)
             const d = Math.hypot((nearestNode as NodeData).pos.x - lastNodePos.x, (nearestNode as NodeData).pos.y - lastNodePos.y);
 
-            if (d > 0.1) { // Only prevent selecting the exact same node twice
+            if (d <= 4.0) {
                 state.setWaypoints(myPlayerId, [...myWp, (nearestNode as NodeData).pos]);
             }
         }

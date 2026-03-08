@@ -286,12 +286,12 @@ export class GameRoom extends Room<GameState> {
 
         clearInterval(this.timerInterval);
         this.timerInterval = setInterval(() => {
-            this.state.timer -= 1;
+            this.state.timer = Math.round((this.state.timer - 0.1) * 10) / 10;
             if (this.state.timer <= 0) {
                 // Force sync and move
                 this.forceStartMovingPhase();
             }
-        }, 1000);
+        }, 100);
     }
 
     private checkAllReady() {
