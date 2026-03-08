@@ -193,7 +193,10 @@ export class ServerGameLoop {
     private distRef: Record<PlayerId, number>;
 
     // Server nodes array this round for segment generation
-    private nodesArrayThisRound: Record<PlayerId, NodeSchema[]>;
+    private nodesArrayThisRound: Record<PlayerId, any[]>;
+    /** Tracks which node IDs have already been recorded this round per player — prevents
+     *  the same node being pushed hundreds of times when a unit lingers near it. */
+    private visitedThisRound: Record<PlayerId, Set<string>>;
 
     private updateInterval: NodeJS.Timeout | null = null;
     private lastTime: number = 0;
@@ -215,6 +218,7 @@ export class ServerGameLoop {
         };
         this.distRef = { P1: 0, P2: 0, P3: 0, P4: 0 };
         this.nodesArrayThisRound = { P1: [], P2: [], P3: [], P4: [] };
+        this.visitedThisRound = { P1: new Set(), P2: new Set(), P3: new Set(), P4: new Set() };
     }
 
     private getActiveIds(): PlayerId[] {
@@ -239,6 +243,7 @@ export class ServerGameLoop {
 
         // Reset sub-state
         this.nodesArrayThisRound = { P1: [], P2: [], P3: [], P4: [] };
+        this.visitedThisRound = { P1: new Set(), P2: new Set(), P3: new Set(), P4: new Set() };
 
         activeIds.forEach(pid => {
             // MapSchema is keyed by sessionId, NOT by PlayerId (P1/P2/etc.)
@@ -293,6 +298,10 @@ export class ServerGameLoop {
             } else if (hitters.length === 1) {
                 const p = hitters[0];
                 const oldOwner = node.owner;
+
+                // Guard: each node recorded at most once per round per player
+                if (this.visitedThisRound[p].has(node.id)) return;
+                this.visitedThisRound[p].add(node.id);
 
                 if (oldOwner === p) {
                     // Own node, just visit

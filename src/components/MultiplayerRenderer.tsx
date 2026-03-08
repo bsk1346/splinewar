@@ -100,14 +100,9 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             } else if (currentPhase === 'SETTING_PATH') {
                 setTimerDisplay(room.state.timer);
                 isMovingRef.current = false;
-                setPhase('SETTING_PATH');
+                setPhase('SETTING_PATH'); // triggers useEffect below to clear waypoints
                 setZoom(1);
-                // Clear local waypoints and segments so previous round data doesn't accumulate
-                const gs = useGameState.getState();
-                const myId = room.state.players.get(room.sessionId)?.id as PlayerId | undefined;
-                if (myId) gs.setWaypoints(myId, []);
-                // Reset Zustand node capture flags mirrored from server
-                gs.setPhase('SETTING_PATH');
+                useGameState.getState().setPhase('SETTING_PATH');
             } else if (currentPhase === 'FINISHED') {
                 setPhase('FINISHED');
                 isMovingRef.current = false;
@@ -138,6 +133,16 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
             setIsReady(true);
         }
     }, [timerDisplay, phase, isReady, myPlayerId, room]);
+
+    // Clear local waypoints at the start of every new SETTING_PATH round.
+    // Uses React state deps to always get the correct myPlayerId — avoids stale closure.
+    useEffect(() => {
+        if (phase === 'SETTING_PATH') {
+            useGameState.getState().setWaypoints(myPlayerId, []);
+            setIsReady(false);
+        }
+    }, [phase, myPlayerId]);
+
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
         if (phase !== 'SETTING_PATH') return;
