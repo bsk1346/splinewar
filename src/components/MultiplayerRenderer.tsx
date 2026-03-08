@@ -43,7 +43,6 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
 
         room.onStateChange((s) => {
             setRound(s.round);
-            setTimerDisplay(s.phase === 'SETTING_PATH' ? s.timer : 0);
 
             const me = s.players.get(room.sessionId);
             if (me) {
@@ -103,6 +102,34 @@ export const MultiplayerRenderer: React.FC<Props> = ({ room }) => {
                 if (p.connected) activeIds.push(p.id as PlayerId);
             });
             useGameState.getState().setMultiplayerActiveIds(activeIds);
+        });
+
+        // Dedicated high-frequency listeners for timer and phase
+        room.state.listen("timer", (currentTimer: number) => {
+            setTimerDisplay(room.state.phase === 'SETTING_PATH' ? currentTimer : room.state.timer);
+        });
+
+        room.state.listen("phase", (currentPhase: string) => {
+            if (currentPhase === 'MOVING') {
+                setPhase('MOVING');
+                isMovingRef.current = true;
+                useGameState.getState().setPhase('MOVING');
+                room.state.players.forEach((p: any) => {
+                    if (!p.connected) return;
+                    const mappedWP = Array.from(p.waypoints as any[]).filter((w: any) => w).map((w: any) => ({ x: w.x, y: w.y }));
+                    useGameState.getState().setWaypoints(p.id as PlayerId, mappedWP);
+                });
+            } else if (currentPhase === 'SETTING_PATH') {
+                setTimerDisplay(room.state.timer);
+                if (isMovingRef.current) {
+                    isMovingRef.current = false;
+                    setPhase('SETTING_PATH');
+                    setZoom(1);
+                }
+            } else if (currentPhase === 'FINISHED') {
+                setPhase('FINISHED');
+                isMovingRef.current = false;
+            }
         });
 
         const handleUnload = () => {

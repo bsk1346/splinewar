@@ -205,7 +205,9 @@ export class ServerGameLoop {
             const playerSchema = this.state.players.get(pid);
             if (!playerSchema) return;
 
-            const wps: Vector2[] = [{ x: playerSchema.startPos.x, y: playerSchema.startPos.y }];
+            // Use currentPos (where player actually is) not startPos (fixed base corner)
+            const origin: Vector2 = { x: playerSchema.currentPos.x, y: playerSchema.currentPos.y };
+            const wps: Vector2[] = [origin];
             playerSchema.waypoints.forEach(wp => wps.push({ x: wp.x, y: wp.y }));
 
             if (wps.length < 2) wps.push({ ...wps[0] });
